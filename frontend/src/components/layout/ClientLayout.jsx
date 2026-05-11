@@ -12,7 +12,7 @@ export default function ClientLayout() {
     <div className="flex h-screen overflow-hidden">
       <aside className="w-64 bg-sidebar flex flex-col shrink-0">
         <div className="px-6 py-5 border-b border-white/10">
-          <span className="text-white font-bold text-lg tracking-tight">Zenith</span>
+          <img src="https://kwikserver.com/KwikServer-SM-Logo.png" alt="Kwik Server" className="h-8 object-contain" />
         </div>
         <nav className="flex-1 px-3 py-4 space-y-1">
           {[
