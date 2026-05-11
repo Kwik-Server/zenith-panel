@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { adminAPI } from '../../api/client';
-import { Plus, ChevronDown, ChevronUp, Trash2 } from 'lucide-react';
+import { Plus, ChevronDown, ChevronUp, Trash2, Pencil } from 'lucide-react';
 import toast from 'react-hot-toast';
 
 export default function IPPools() {
@@ -9,6 +9,8 @@ export default function IPPools() {
   const [poolDetail, setPoolDetail] = useState({});
   const [showPool, setShowPool] = useState(false);
   const [showIps, setShowIps] = useState(null);
+  const [editPool, setEditPool] = useState(null);
+  const [editForm, setEditForm] = useState({});
   const [poolForm, setPoolForm] = useState({ name:'', gateway:'', netmask:'', leaseweb_api_key:'' });
   const [ipsText, setIpsText] = useState('');
   const [nodes, setNodes] = useState([]);
@@ -23,6 +25,12 @@ export default function IPPools() {
       const r = await adminAPI.getPool(id);
       setPoolDetail(d => ({ ...d, [id]: r.data.data }));
     }
+  };
+
+  const openEdit = (p) => { setEditPool(p.id); setEditForm({ name: p.name, gateway: p.gateway, netmask: p.netmask, leaseweb_api_key: p.leaseweb_api_key || '' }); };
+  const savePool = async () => {
+    try { await adminAPI.updatePool(editPool, editForm); toast.success('Pool updated'); setEditPool(null); load(); }
+    catch (e) { toast.error(e.response?.data?.error || 'Failed'); }
   };
 
   const createPool = async () => {
@@ -67,6 +75,7 @@ export default function IPPools() {
                 <p className="text-sm text-slate-500">{p.gateway} · {p.used_ips || 0}/{p.total_ips || 0} IPs used</p>
               </div>
               <div className="flex items-center gap-3">
+                <button onClick={e => { e.stopPropagation(); openEdit(p); }} className="p-1.5 text-slate-400 hover:text-indigo-600"><Pencil size={15}/></button>
                 <button onClick={e => { e.stopPropagation(); setShowIps(p.id); setIpsText(''); }} className="text-sm text-indigo-600 hover:text-indigo-800 font-medium">+ Add IPs</button>
                 {expanded === p.id ? <ChevronUp size={18} className="text-slate-400"/> : <ChevronDown size={18} className="text-slate-400"/>}
               </div>
@@ -102,6 +111,26 @@ export default function IPPools() {
             <div className="flex gap-3 mt-4">
               <button onClick={() => setShowPool(false)} className="flex-1 py-2 border border-slate-200 rounded-lg text-sm text-slate-600">Cancel</button>
               <button onClick={createPool} className="flex-1 py-2 bg-indigo-600 text-white rounded-lg text-sm font-medium">Create</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {editPool && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-2xl p-6 w-full max-w-sm">
+            <h2 className="text-lg font-bold text-slate-900 mb-4">Edit IP Pool</h2>
+            <div className="space-y-3">
+              {[['Name','name'],['Gateway','gateway'],['Netmask','netmask'],['Leaseweb API Key','leaseweb_api_key']].map(([l,k]) => (
+                <div key={k}><label className="block text-sm font-medium text-slate-700 mb-1">{l}</label>
+                <input value={editForm[k]||''} onChange={e => setEditForm(f => ({...f,[k]:e.target.value}))}
+                  className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500 outline-none"
+                  type={k==='leaseweb_api_key'?'password':'text'}/></div>
+              ))}
+            </div>
+            <div className="flex gap-3 mt-4">
+              <button onClick={() => setEditPool(null)} className="flex-1 py-2 border border-slate-200 rounded-lg text-sm text-slate-600">Cancel</button>
+              <button onClick={savePool} className="flex-1 py-2 bg-indigo-600 text-white rounded-lg text-sm font-medium">Save</button>
             </div>
           </div>
         </div>

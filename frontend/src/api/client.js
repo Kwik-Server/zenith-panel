@@ -88,6 +88,7 @@ export const adminAPI = {
 
   // IP Pools
   getIpPools:      ()         => api.get('/admin/ippools'),
+  updatePool:      (id, d)    => api.put(`/admin/ippools/${id}`, d),
   getAvailableIps: (nodeId)   => api.get(`/admin/ippools/available?node_id=${nodeId}`),
   createPool:      (d)        => api.post('/admin/ippools', d),
   getPool:         (id)       => api.get(`/admin/ippools/${id}`),

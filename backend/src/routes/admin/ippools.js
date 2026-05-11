@@ -31,6 +31,13 @@ export default async function ipPoolRoutes(fastify) {
     return reply.status(201).send({ success: true, data: { id: r.insertId } });
   });
 
+  fastify.put('/:id', async (req, reply) => {
+    const { name, gateway, netmask, node_id, leaseweb_api_key } = req.body || {};
+    await query('UPDATE ip_pools SET name=COALESCE(?,name), gateway=COALESCE(?,gateway), netmask=COALESCE(?,netmask), node_id=COALESCE(?,node_id), leaseweb_api_key=? WHERE id=?',
+      [name??null, gateway??null, netmask??null, node_id??null, leaseweb_api_key||null, req.params.id]);
+    return reply.send({ success: true });
+  });
+
   fastify.get('/:id', async (req, reply) => {
     const pool = await queryOne('SELECT * FROM ip_pools WHERE id = ?', [req.params.id]);
     if (!pool) return reply.status(404).send({ success: false, error: 'Pool not found' });
