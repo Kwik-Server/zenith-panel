@@ -9,7 +9,7 @@ export default function IPPools() {
   const [poolDetail, setPoolDetail] = useState({});
   const [showPool, setShowPool] = useState(false);
   const [showIps, setShowIps] = useState(null);
-  const [poolForm, setPoolForm] = useState({ name:'', gateway:'', netmask:'' });
+  const [poolForm, setPoolForm] = useState({ name:'', gateway:'', netmask:'', leaseweb_api_key:'' });
   const [ipsText, setIpsText] = useState('');
   const [nodes, setNodes] = useState([]);
 
@@ -94,7 +94,7 @@ export default function IPPools() {
           <div className="bg-white rounded-2xl p-6 w-full max-w-sm">
             <h2 className="text-lg font-bold text-slate-900 mb-4">New IP Pool</h2>
             <div className="space-y-3">
-              {[['Name','name'],['Gateway','gateway'],['Netmask','netmask']].map(([l,k]) => (
+              {[['Name','name'],['Gateway','gateway'],['Netmask','netmask'],['Leaseweb API Key','leaseweb_api_key']].map(([l,k]) => (
                 <div key={k}><label className="block text-sm font-medium text-slate-700 mb-1">{l}</label>
                 <input value={poolForm[k]} onChange={e => setPoolForm(f => ({...f,[k]:e.target.value}))} className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500 outline-none"/></div>
               ))}

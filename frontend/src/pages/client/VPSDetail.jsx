@@ -38,6 +38,8 @@ export default function ClientVPSDetail() {
   const [reinstallTpl, setReinstallTpl] = useState('');
   const [reinstalling, setReinstalling] = useState(false);
   const [templates, setTemplates] = useState([]);
+  const [rdnsData, setRdnsData] = useState([]);
+  const [rdnsEditing, setRdnsEditing] = useState({});
   const [firewall, setFirewall] = useState({ rules: [], options: {} });
   const [showRuleModal, setShowRuleModal] = useState(false);
   const [editingRule, setEditingRule] = useState(null);
@@ -55,6 +57,18 @@ export default function ClientVPSDetail() {
   const loadBackups = () => clientAPI.getBackups(id).then(r => setBackups(r.data.data));
 
   useEffect(() => { if (tab === 'backups') loadBackups(); }, [tab]);
+
+  const loadRdns = () => clientAPI.getRdns(id).then(r => setRdnsData(r.data.data)).catch(() => {});
+
+  const updateRdns = async (ip) => {
+    const ptr = rdnsEditing[ip];
+    if (!ptr) { toast.error('PTR cannot be empty'); return; }
+    try {
+      await clientAPI.updateRdns(id, { ip, ptr });
+      toast.success('PTR record updated');
+      loadRdns();
+    } catch (e) { toast.error(e.response?.data?.error || 'Failed'); }
+  };
 
   const loadFirewall = () => clientAPI.getFirewall(id).then(r => setFirewall(r.data.data)).catch(() => {});
 
@@ -93,6 +107,7 @@ export default function ClientVPSDetail() {
     catch (e) { toast.error(e.response?.data?.error || 'Failed'); }
   };
 
+  useEffect(() => { if (tab === 'rdns') loadRdns(); }, [tab]);
   useEffect(() => { if (tab === 'firewall') loadFirewall(); }, [tab]);
 
   useEffect(() => {
@@ -146,7 +161,7 @@ export default function ClientVPSDetail() {
       </div>
 
       <div className="flex gap-1 mb-6 border-b border-slate-200">
-        {['overview','console','firewall','reinstall'].map(t => (
+        {['overview','console','rdns','firewall','reinstall'].map(t => (
           <button key={t} onClick={() => setTab(t)} className={`px-4 py-2 text-sm font-medium capitalize border-b-2 -mb-px transition-colors ${tab===t?'border-indigo-600 text-indigo-600':'border-transparent text-slate-500 hover:text-slate-700'}`}>{t}</button>
         ))}
       </div>
@@ -194,6 +209,48 @@ export default function ClientVPSDetail() {
                     <td className="px-4 py-3"><button onClick={() => restore(b.id)} className="text-xs text-indigo-600 hover:text-indigo-800 font-medium">Restore</button></td>
                   </tr>
                 ))}</tbody></table>}
+          </div>
+        </div>
+      )}
+
+      {tab === 'rdns' && (
+        <div className="max-w-2xl space-y-4">
+          <div className="bg-blue-50 border border-blue-200 rounded-xl p-4 text-sm text-blue-700">
+            Reverse DNS (PTR) records map your IP address to a hostname. Changes may take up to 24 hours to propagate.
+          </div>
+          <div className="bg-white rounded-xl border border-slate-200 overflow-hidden">
+            <div className="p-4 border-b border-slate-100">
+              <h3 className="font-semibold text-slate-900">IP Addresses & PTR Records</h3>
+            </div>
+            {rdnsData.length === 0
+              ? <p className="p-6 text-center text-slate-400 text-sm">Loading...</p>
+              : rdnsData.map((item) => (
+                  <div key={item.ip} className="p-4 border-b border-slate-100 last:border-0">
+                    <div className="flex items-center justify-between mb-2">
+                      <span className="font-mono text-sm font-medium text-slate-900">{item.ip}</span>
+                      {item.error && <span className="text-xs text-red-500">{item.error}</span>}
+                    </div>
+                    {!item.error && (
+                      <div className="flex gap-2">
+                        <input
+                          type="text"
+                          defaultValue={item.ptr}
+                          onChange={e => setRdnsEditing(prev => ({ ...prev, [item.ip]: e.target.value }))}
+                          placeholder="e.g. mail.example.com"
+                          className="flex-1 px-3 py-1.5 border border-slate-200 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500 outline-none font-mono"
+                        />
+                        <button onClick={() => updateRdns(item.ip)}
+                          className="px-4 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-sm font-medium">
+                          Update
+                        </button>
+                      </div>
+                    )}
+                    {item.ptr && (
+                      <p className="text-xs text-slate-400 mt-1">Current: <span className="font-mono">{item.ptr}</span></p>
+                    )}
+                  </div>
+                ))
+            }
           </div>
         </div>
       )}

@@ -25,9 +25,9 @@ export default async function ipPoolRoutes(fastify) {
   });
 
   fastify.post('/', async (req, reply) => {
-    const { name, gateway, netmask, node_id } = req.body || {};
+    const { name, gateway, netmask, node_id, leaseweb_api_key } = req.body || {};
     if (!name) return reply.status(400).send({ success: false, error: 'name required' });
-    const r = await query('INSERT INTO ip_pools (name, gateway, netmask, node_id) VALUES (?, ?, ?, ?)', [name, gateway || '', netmask || '', node_id || null]);
+    const r = await query('INSERT INTO ip_pools (name, gateway, netmask, node_id, leaseweb_api_key) VALUES (?, ?, ?, ?, ?)', [name, gateway || '', netmask || '', node_id || null, leaseweb_api_key || null]);
     return reply.status(201).send({ success: true, data: { id: r.insertId } });
   });
 
