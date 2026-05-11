@@ -259,13 +259,13 @@ export async function createLxcContainer(node, { vmid, templatePath, hostname, c
     swap:        512,
     rootfs:      `${st}:${diskSize || 20}`,
     password,
-    net0:        `name=eth0,bridge=vmbr0,${netIp}`,
+    net0:        `name=eth0,bridge=vmbr0,${netIp},firewall=1`,
     start:       0,
     unprivileged: 1,
   };
 
   additionalIpConfigs.forEach((ipConf, i) => {
-    body[`net${i + 1}`] = `name=eth${i + 1},bridge=vmbr0,${ipConf}`;
+    body[`net${i + 1}`] = `name=eth${i + 1},bridge=vmbr0,${ipConf},firewall=1`;
   });
 
   const task = await req(node, 'POST', `/nodes/${pveNode}/lxc`, body);
