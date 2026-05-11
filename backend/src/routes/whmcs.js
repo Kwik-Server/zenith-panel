@@ -36,7 +36,15 @@ export default async function whmcsRoutes(fastify) {
     const tpl = await queryOne('SELECT * FROM templates WHERE id = ? AND is_active = 1', [template_id]);
     if (!tpl) return reply.status(400).send({ success: false, error: 'Template not found' });
 
-    const freeIp = await queryOne('SELECT * FROM ip_addresses WHERE vps_id IS NULL AND pool_id IN (SELECT id FROM ip_pools WHERE node_id = ?) LIMIT 1', [targetNodeId]);
+    const freeIp = await queryOne(
+      'SELECT a.*, p.netmask, p.gateway FROM ip_addresses a JOIN ip_pools p ON a.pool_id = p.id WHERE a.vps_id IS NULL AND p.node_id = ? LIMIT 1',
+      [targetNodeId]
+    );
+
+    const netmaskToCidr = (nm) => nm ? nm.split('.').reduce((acc, o) => acc + (parseInt(o) >>> 0).toString(2).split('').filter(b => b === '1').length, 0) : 24;
+    const cidr = netmaskToCidr(freeIp?.netmask);
+    const gw = freeIp?.gateway || '';
+    const ipConfig = freeIp ? `ip=${freeIp.ip_address}/${cidr}${gw ? ',gw=' + gw : ''}` : 'ip=dhcp';
 
     const uuid = uuidv4();
     const r = await query(
@@ -50,7 +58,7 @@ export default async function whmcsRoutes(fastify) {
       vpsId, taskId: task.insertId, root_password,
       ip_address_id: freeIp?.id || null,
       ip: freeIp?.ip_address || null,
-      ipConfig: freeIp ? `ip=${freeIp.ip_address}/24,gw=${freeIp.gateway || ''}` : 'ip=dhcp',
+      ipConfig,
     });
 
     return reply.status(202).send({ success: true, message: 'VPS creation queued', data: { uuid, vps_id: vpsId, hostname, root_password } });
