@@ -6,6 +6,8 @@
 
 if (!defined('WHMCS')) die('Access denied');
 
+use WHMCS\Database\Capsule;
+
 require_once __DIR__ . '/lib/ZenithAPI.php';
 
 function zenith_MetaData(): array {
