@@ -122,6 +122,60 @@ export default async function clientVpsRoutes(fastify) {
     }
   });
 
+  // Firewall management
+  fastify.get('/:id/firewall', async (req, reply) => {
+    const vps = await getVpsForUser(req.params.id, req.user.id, req.user.role);
+    if (!vps || !vps.proxmox_vmid) return reply.status(404).send({ success: false, error: 'VPS not found' });
+    const node = await queryOne('SELECT * FROM nodes WHERE id = ?', [vps.node_id]);
+    try {
+      const [rules, options] = await Promise.all([
+        proxmox.getFirewallRules(node, vps.proxmox_vmid, vps.type),
+        proxmox.getFirewallOptions(node, vps.proxmox_vmid, vps.type),
+      ]);
+      return reply.send({ success: true, data: { rules: rules || [], options: options || {} } });
+    } catch (err) { return reply.status(422).send({ success: false, error: err.message }); }
+  });
+
+  fastify.post('/:id/firewall', async (req, reply) => {
+    const vps = await getVpsForUser(req.params.id, req.user.id, req.user.role);
+    if (!vps || !vps.proxmox_vmid) return reply.status(404).send({ success: false, error: 'VPS not found' });
+    const node = await queryOne('SELECT * FROM nodes WHERE id = ?', [vps.node_id]);
+    try {
+      await proxmox.addFirewallRule(node, vps.proxmox_vmid, req.body, vps.type);
+      return reply.send({ success: true });
+    } catch (err) { return reply.status(422).send({ success: false, error: err.message }); }
+  });
+
+  fastify.put('/:id/firewall/:pos', async (req, reply) => {
+    const vps = await getVpsForUser(req.params.id, req.user.id, req.user.role);
+    if (!vps || !vps.proxmox_vmid) return reply.status(404).send({ success: false, error: 'VPS not found' });
+    const node = await queryOne('SELECT * FROM nodes WHERE id = ?', [vps.node_id]);
+    try {
+      await proxmox.updateFirewallRule(node, vps.proxmox_vmid, req.params.pos, req.body, vps.type);
+      return reply.send({ success: true });
+    } catch (err) { return reply.status(422).send({ success: false, error: err.message }); }
+  });
+
+  fastify.delete('/:id/firewall/:pos', async (req, reply) => {
+    const vps = await getVpsForUser(req.params.id, req.user.id, req.user.role);
+    if (!vps || !vps.proxmox_vmid) return reply.status(404).send({ success: false, error: 'VPS not found' });
+    const node = await queryOne('SELECT * FROM nodes WHERE id = ?', [vps.node_id]);
+    try {
+      await proxmox.deleteFirewallRule(node, vps.proxmox_vmid, req.params.pos, vps.type);
+      return reply.send({ success: true });
+    } catch (err) { return reply.status(422).send({ success: false, error: err.message }); }
+  });
+
+  fastify.put('/:id/firewall-options', async (req, reply) => {
+    const vps = await getVpsForUser(req.params.id, req.user.id, req.user.role);
+    if (!vps || !vps.proxmox_vmid) return reply.status(404).send({ success: false, error: 'VPS not found' });
+    const node = await queryOne('SELECT * FROM nodes WHERE id = ?', [vps.node_id]);
+    try {
+      await proxmox.setFirewallOptions(node, vps.proxmox_vmid, req.body, vps.type);
+      return reply.send({ success: true });
+    } catch (err) { return reply.status(422).send({ success: false, error: err.message }); }
+  });
+
   fastify.get('/:id/backups', async (req, reply) => {
     const vps = await getVpsForUser(req.params.id, req.user.id, req.user.role);
     if (!vps) return reply.status(404).send({ success: false, error: 'VPS not found' });

@@ -273,6 +273,44 @@ export async function createLxcContainer(node, { vmid, templatePath, hostname, c
   return vmid;
 }
 
+// ─── Firewall ────────────────────────────────────────────────────────────────
+
+export async function getFirewallRules(node, vmid, type = 'lxc') {
+  const pveNode = node.proxmox_node || 'pve';
+  const path = type === 'lxc' ? `lxc` : `qemu`;
+  return req(node, 'GET', `/nodes/${pveNode}/${path}/${vmid}/firewall/rules`);
+}
+
+export async function addFirewallRule(node, vmid, rule, type = 'lxc') {
+  const pveNode = node.proxmox_node || 'pve';
+  const path = type === 'lxc' ? `lxc` : `qemu`;
+  return req(node, 'POST', `/nodes/${pveNode}/${path}/${vmid}/firewall/rules`, rule);
+}
+
+export async function updateFirewallRule(node, vmid, pos, rule, type = 'lxc') {
+  const pveNode = node.proxmox_node || 'pve';
+  const path = type === 'lxc' ? `lxc` : `qemu`;
+  return req(node, 'PUT', `/nodes/${pveNode}/${path}/${vmid}/firewall/rules/${pos}`, rule);
+}
+
+export async function deleteFirewallRule(node, vmid, pos, type = 'lxc') {
+  const pveNode = node.proxmox_node || 'pve';
+  const path = type === 'lxc' ? `lxc` : `qemu`;
+  return req(node, 'DELETE', `/nodes/${pveNode}/${path}/${vmid}/firewall/rules/${pos}`);
+}
+
+export async function getFirewallOptions(node, vmid, type = 'lxc') {
+  const pveNode = node.proxmox_node || 'pve';
+  const path = type === 'lxc' ? `lxc` : `qemu`;
+  return req(node, 'GET', `/nodes/${pveNode}/${path}/${vmid}/firewall/options`);
+}
+
+export async function setFirewallOptions(node, vmid, options, type = 'lxc') {
+  const pveNode = node.proxmox_node || 'pve';
+  const path = type === 'lxc' ? `lxc` : `qemu`;
+  return req(node, 'PUT', `/nodes/${pveNode}/${path}/${vmid}/firewall/options`, options);
+}
+
 export async function updateLxcConfig(node, vmid, config) {
   const pveNode = node.proxmox_node || 'pve';
   await req(node, 'PUT', `/nodes/${pveNode}/lxc/${vmid}/config`, config);
