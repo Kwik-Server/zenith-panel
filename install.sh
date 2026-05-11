@@ -35,6 +35,15 @@ echo ""
 randpass() { tr -dc 'A-Za-z0-9!@#$%' </dev/urandom | head -c 20 || true; }
 randstr()  { tr -dc 'a-z0-9' </dev/urandom | head -c 48 || true; }
 
+# Parse arguments
+GITHUB_TOKEN=""
+for i in "$@"; do
+  case $i in
+    --github-token=*) GITHUB_TOKEN="${i#*=}" ;;
+    --github-token)   shift; GITHUB_TOKEN="${1}" ;;
+  esac
+done
+
 [[ $EUID -ne 0 ]] && error "Run as root: sudo bash install.sh"
 mkdir -p "$(dirname "$LOG_FILE")" && touch "$LOG_FILE"
 banner; divider
@@ -115,10 +124,21 @@ systemctl enable nginx >> "$LOG_FILE" 2>&1
 success "Nginx + Certbot installed"
 
 step "Installing Zenith files"
-REPO_URL="https://github.com/Kwik-Server/zenith-panel.git"
+REPO_BASE="github.com/Kwik-Server/zenith-panel.git"
 mkdir -p "$PANEL_DIR" /var/log/zenith
 if [ -d "/tmp/zenith-src" ]; then rm -rf /tmp/zenith-src; fi
-git clone --depth=1 "$REPO_URL" /tmp/zenith-src >> "$LOG_FILE" 2>&1 || error "Failed to clone repository"
+
+# Prompt for token if not provided
+if [[ -z "$GITHUB_TOKEN" ]]; then
+  echo ""
+  echo -e "  ${BOLD}GitHub Personal Access Token${NC} (required for private repo)"
+  echo -e "  Generate at: GitHub → Settings → Developer Settings → Tokens (classic)"
+  read -rp "  Token: " GITHUB_TOKEN
+  [[ -z "$GITHUB_TOKEN" ]] && error "GitHub token is required"
+fi
+
+CLONE_URL="https://${GITHUB_TOKEN}@${REPO_BASE}"
+git clone --depth=1 "$CLONE_URL" /tmp/zenith-src >> "$LOG_FILE" 2>&1 || error "Failed to clone repository. Check your GitHub token."
 cp -r /tmp/zenith-src/backend  "$PANEL_DIR/"
 cp -r /tmp/zenith-src/frontend "$PANEL_DIR/"
 cp -r /tmp/zenith-src/config   "$PANEL_DIR/"
