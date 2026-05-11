@@ -1,0 +1,41 @@
+# Claude Code settings
+.claude/
+
+# Dependencies
+node_modules/
+backend/node_modules/
+frontend/node_modules/
+
+# Environment files (contain secrets)
+.env
+backend/.env
+frontend/.env
+*.env.local
+
+# Build output
+frontend/dist/
+frontend/.vite/
+
+# Logs
+*.log
+logs/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Editor
+.vscode/
+.idea/
+*.swp
+
+# Credentials (never commit these)
+*credentials*.txt
+*-credentials.txt
+
+# PM2
+.pm2/
+
+# Temporary
+*.tmp
+*.temp

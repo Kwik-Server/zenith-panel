@@ -1,0 +1,266 @@
+import React, { useState, useEffect } from 'react';
+import { useParams } from 'react-router-dom';
+import { adminAPI } from '../../api/client';
+import { Play, Square, RotateCcw, Zap, PauseCircle, Terminal, HardDrive, Plus, Trash2, RefreshCw } from 'lucide-react';
+import toast from 'react-hot-toast';
+import { useAuthStore } from '../../store/authStore';
+
+const STATUS_COLOR = { running: 'bg-green-100 text-green-700', stopped: 'bg-slate-100 text-slate-600', suspended: 'bg-amber-100 text-amber-700', error: 'bg-red-100 text-red-700', creating: 'bg-indigo-100 text-indigo-700' };
+
+function VncConsole({ vpsId, token }) {
+  const proto = window.location.protocol === 'https:' ? 'wss' : 'ws';
+  const wsUrl = `${proto}://${window.location.host}/api/v1/admin/vps/${vpsId}/console/ws?token=${token}`;
+  const [VncScreen, setVncScreen] = useState(null);
+
+  useEffect(() => {
+    import('react-vnc').then(m => setVncScreen(() => m.VncScreen));
+  }, []);
+
+  if (!VncScreen) return (
+    <div className="flex items-center justify-center h-full bg-black rounded-xl text-slate-400">
+      <p className="text-sm">Loading console...</p>
+    </div>
+  );
+
+  return (
+    <VncScreen
+      url={wsUrl}
+      scaleViewport
+      style={{ width: '100%', height: '100%', background: '#000', borderRadius: '12px' }}
+    />
+  );
+}
+
+export default function VPSDetail() {
+  const { id } = useParams();
+  const token = useAuthStore(s => s.token);
+  const [vps, setVps] = useState(null);
+  const [tab, setTab] = useState('overview');
+  const [backups, setBackups] = useState([]);
+  const [assignedIps, setAssignedIps] = useState([]);
+  const [availableIps, setAvailableIps] = useState([]);
+  const [showIpModal, setShowIpModal] = useState(false);
+  const [showReinstall, setShowReinstall] = useState(false);
+  const [templates, setTemplates] = useState([]);
+  const [reinstallForm, setReinstallForm] = useState({ template_id: '', root_password: '' });
+
+  const load = () => adminAPI.getVpsDetail(id).then(r => setVps(r.data.data));
+
+  useEffect(() => { load(); }, [id]);
+
+  const action = async (a, label, opts = {}) => {
+    try { await adminAPI.vpsAction(id, a, opts); toast.success(`${label} queued`); setTimeout(load, 1500); }
+    catch (e) { toast.error(e.response?.data?.error || 'Failed'); }
+  };
+
+  const loadBackups = async () => {
+    const r = await adminAPI.getTasks({ vps_id: id });
+    setBackups(r.data.data.filter(t => t.type === 'create_backup'));
+  };
+
+  const loadIps = async () => {
+    const r = await adminAPI.getVpsIps(id);
+    setAssignedIps(r.data.data);
+  };
+
+  const assignIp = async (ipId) => {
+    try {
+      await adminAPI.assignVpsIp(id, { ip_address_id: ipId });
+      toast.success('IP assigned');
+      setShowIpModal(false);
+      loadIps();
+    } catch (e) { toast.error(e.response?.data?.error || 'Failed'); }
+  };
+
+  const removeIp = async (ipId) => {
+    if (!window.confirm('Remove this IP from the VPS?')) return;
+    try {
+      await adminAPI.removeVpsIp(id, ipId);
+      toast.success('IP removed');
+      loadIps();
+    } catch (e) { toast.error(e.response?.data?.error || 'Failed'); }
+  };
+
+  const openIpModal = async () => {
+    if (vps) {
+      const r = await adminAPI.getAvailableIps(vps.node_id).catch(() => ({ data: { data: [] } }));
+      setAvailableIps(r.data.data);
+    }
+    setShowIpModal(true);
+  };
+
+  const openReinstall = async () => {
+    const r = await adminAPI.getTemplates().catch(() => ({ data: { data: [] } }));
+    const filtered = r.data.data.filter(t => t.is_active && t.type === vps.type);
+    setTemplates(filtered);
+    setReinstallForm({ template_id: vps.template_id || '', root_password: '' });
+    setShowReinstall(true);
+  };
+
+  const confirmReinstall = async () => {
+    if (!reinstallForm.root_password) { toast.error('New root password required'); return; }
+    if (!window.confirm('Reinstall will erase all data on this VPS. Continue?')) return;
+    try {
+      await adminAPI.vpsAction(id, 'reinstall', reinstallForm);
+      toast.success('Reinstall queued');
+      setShowReinstall(false);
+      setTimeout(load, 1500);
+    } catch (e) { toast.error(e.response?.data?.error || 'Failed'); }
+  };
+
+  useEffect(() => { if (tab === 'backups') loadBackups(); }, [tab]);
+  useEffect(() => { loadIps(); }, [id]);
+
+  if (!vps) return <div className="p-8 text-slate-500">Loading…</div>;
+
+  return (
+    <div className="p-8">
+      <div className="flex items-start justify-between mb-6">
+        <div>
+          <h1 className="text-2xl font-bold text-slate-900">{vps.hostname}</h1>
+          <div className="flex items-center gap-3 mt-1 text-sm text-slate-500">
+            <span className={`px-2.5 py-0.5 rounded-full text-xs font-semibold ${STATUS_COLOR[vps.status] || 'bg-slate-100'}`}>{vps.status}</span>
+            <span>VMID: {vps.proxmox_vmid || 'pending'}</span>
+            <span>Node: {vps.node_name}</span>
+          </div>
+        </div>
+        <div className="flex items-center gap-2">
+          <button onClick={() => action('start','Start')}      className="flex items-center gap-1.5 px-3 py-1.5 bg-green-600 text-white rounded-lg text-sm hover:bg-green-700"><Play size={14}/> Start</button>
+          <button onClick={() => action('stop','Stop')}        className="flex items-center gap-1.5 px-3 py-1.5 bg-slate-600 text-white rounded-lg text-sm hover:bg-slate-700"><Square size={14}/> Stop</button>
+          <button onClick={() => action('restart','Restart')}  className="flex items-center gap-1.5 px-3 py-1.5 bg-blue-600 text-white rounded-lg text-sm hover:bg-blue-700"><RotateCcw size={14}/> Restart</button>
+          <button onClick={() => action('forceStop','Force Stop')} className="flex items-center gap-1.5 px-3 py-1.5 bg-orange-600 text-white rounded-lg text-sm hover:bg-orange-700"><Zap size={14}/> Force</button>
+          <button onClick={() => action('suspend','Suspend')}  className="flex items-center gap-1.5 px-3 py-1.5 bg-amber-600 text-white rounded-lg text-sm hover:bg-amber-700"><PauseCircle size={14}/> Suspend</button>
+          <button onClick={openReinstall} className="flex items-center gap-1.5 px-3 py-1.5 bg-rose-600 text-white rounded-lg text-sm hover:bg-rose-700"><RefreshCw size={14}/> Reinstall</button>
+          <button onClick={() => setTab('console')} className="flex items-center gap-1.5 px-3 py-1.5 bg-indigo-600 text-white rounded-lg text-sm hover:bg-indigo-700"><Terminal size={14}/> Console</button>
+        </div>
+      </div>
+
+      <div className="flex gap-1 mb-6 border-b border-slate-200">
+        {['overview','console','backups'].map(t => (
+          <button key={t} onClick={() => setTab(t)}
+            className={`px-4 py-2 text-sm font-medium capitalize border-b-2 -mb-px transition-colors ${tab === t ? 'border-indigo-600 text-indigo-600' : 'border-transparent text-slate-500 hover:text-slate-700'}`}>
+            {t}
+          </button>
+        ))}
+      </div>
+
+      {tab === 'overview' && (
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+          <div className="bg-white rounded-xl border border-slate-200 p-6">
+            <h3 className="font-semibold text-slate-900 mb-4">Specifications</h3>
+            <dl className="space-y-3">
+              {[
+                ['CPU', `${vps.cpu} vCPU`],
+                ['RAM', `${vps.ram >= 1024 ? vps.ram/1024 + ' GB' : vps.ram + ' MB'}`],
+                ['Disk', `${vps.disk} GB`],
+                ['Bandwidth', vps.bandwidth ? `${vps.bandwidth} GB/mo` : 'Unlimited'],
+                ['Type', vps.type?.toUpperCase()],
+                ['VMID', vps.proxmox_vmid || 'Pending'],
+              ].map(([k, v]) => (
+                <div key={k} className="flex justify-between text-sm">
+                  <dt className="text-slate-500">{k}</dt>
+                  <dd className="font-medium text-slate-900">{v}</dd>
+                </div>
+              ))}
+            </dl>
+          </div>
+          <div className="bg-white rounded-xl border border-slate-200 p-6">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="font-semibold text-slate-900">Network</h3>
+              <button onClick={openIpModal} className="flex items-center gap-1 text-xs text-indigo-600 hover:text-indigo-700 font-medium">
+                <Plus size={13}/> Add IP
+              </button>
+            </div>
+            <dl className="space-y-2">
+              {assignedIps.length === 0 && <p className="text-sm text-slate-400">No IPs assigned</p>}
+              {assignedIps.map((ip, i) => (
+                <div key={ip.id} className="flex items-center justify-between text-sm">
+                  <div className="flex items-center gap-2">
+                    <span className="text-slate-500">IPv{ip.ip_address.includes(':') ? '6' : '4'}</span>
+                    {i === 0 && <span className="text-xs bg-indigo-100 text-indigo-600 px-1.5 py-0.5 rounded font-medium">primary</span>}
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <span className="font-mono font-medium text-slate-900">{ip.ip_address}</span>
+                    <button onClick={() => removeIp(ip.id)} className="text-slate-300 hover:text-red-500 transition-colors">
+                      <Trash2 size={13}/>
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </dl>
+          </div>
+        </div>
+      )}
+
+      {tab === 'console' && (
+        <div style={{ height: 600 }}>
+          <VncConsole vpsId={id} token={token} />
+        </div>
+      )}
+
+      {tab === 'backups' && (
+        <div className="bg-white rounded-xl border border-slate-200">
+          <div className="p-4 border-b border-slate-100 flex justify-between items-center">
+            <h3 className="font-semibold text-slate-900">Backups</h3>
+          </div>
+          {backups.length === 0
+            ? <p className="p-6 text-slate-400 text-sm text-center">No backup tasks found</p>
+            : <table className="w-full"><tbody>{backups.map(b => (
+                <tr key={b.id} className="border-b border-slate-100 text-sm">
+                  <td className="px-4 py-3 text-slate-600">{new Date(b.created_at).toLocaleString()}</td>
+                  <td className="px-4 py-3"><span className={`px-2 py-0.5 rounded-full text-xs ${b.status === 'completed' ? 'bg-green-100 text-green-700' : 'bg-slate-100 text-slate-600'}`}>{b.status}</span></td>
+                </tr>
+              ))}</tbody></table>}
+        </div>
+      )}
+      {showReinstall && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-2xl p-6 w-full max-w-md">
+            <h2 className="text-lg font-bold text-slate-900 mb-1">Reinstall OS</h2>
+            <p className="text-sm text-red-600 mb-4">Warning: All data on this VPS will be erased.</p>
+            <div className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-1">Select OS Template</label>
+                <select value={reinstallForm.template_id} onChange={e => setReinstallForm(f => ({...f, template_id: e.target.value}))}
+                  className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm focus:ring-2 focus:ring-rose-500 outline-none">
+                  <option value="">Keep current OS</option>
+                  {templates.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
+                </select>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-1">New Root Password *</label>
+                <input type="password" value={reinstallForm.root_password} onChange={e => setReinstallForm(f => ({...f, root_password: e.target.value}))}
+                  placeholder="Min 8 characters" className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm focus:ring-2 focus:ring-rose-500 outline-none" />
+              </div>
+            </div>
+            <div className="flex gap-3 mt-6">
+              <button onClick={() => setShowReinstall(false)} className="flex-1 py-2 border border-slate-200 rounded-lg text-sm text-slate-600">Cancel</button>
+              <button onClick={confirmReinstall} className="flex-1 py-2 bg-rose-600 hover:bg-rose-700 text-white rounded-lg text-sm font-medium">Reinstall</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showIpModal && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-2xl p-6 w-full max-w-sm">
+            <h2 className="text-lg font-bold text-slate-900 mb-4">Assign IP Address</h2>
+            {availableIps.length === 0
+              ? <p className="text-sm text-slate-400 mb-4">No available IPs in pool for this node.</p>
+              : <div className="space-y-2 max-h-64 overflow-y-auto mb-4">
+                  {availableIps.map(ip => (
+                    <button key={ip.id} onClick={() => assignIp(ip.id)}
+                      className="w-full flex items-center justify-between p-3 border border-slate-200 rounded-lg hover:border-indigo-500 hover:bg-indigo-50 text-sm transition-colors">
+                      <span className="font-mono font-medium text-slate-900">{ip.ip_address}</span>
+                      <span className="text-xs text-slate-400">{ip.pool_name}</span>
+                    </button>
+                  ))}
+                </div>
+            }
+            <button onClick={() => setShowIpModal(false)} className="w-full py-2 border border-slate-200 rounded-lg text-sm text-slate-600">Cancel</button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
