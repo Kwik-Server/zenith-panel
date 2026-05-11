@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useParams } from 'react-router-dom';
 import { clientAPI } from '../../api/client';
 import { useAuthStore } from '../../store/authStore';
-import { Play, Square, RotateCcw, Terminal, AlertTriangle, Shield, Plus, Trash2, Pencil } from 'lucide-react';
+import { Play, Square, RotateCcw, Terminal, AlertTriangle, Shield, Plus, Trash2, Pencil, LifeBuoy } from 'lucide-react';
 import toast from 'react-hot-toast';
 
 function OsIcon({ name }) {
@@ -38,6 +38,8 @@ export default function ClientVPSDetail() {
   const [reinstallTpl, setReinstallTpl] = useState('');
   const [reinstalling, setReinstalling] = useState(false);
   const [templates, setTemplates] = useState([]);
+  const [rescuePassword, setRescuePassword] = useState(null);
+  const [rescueLoading, setRescueLoading] = useState(false);
   const [rdnsData, setRdnsData] = useState([]);
   const [rdnsEditing, setRdnsEditing] = useState({});
   const [firewall, setFirewall] = useState({ rules: [], options: {} });
@@ -57,6 +59,30 @@ export default function ClientVPSDetail() {
   const loadBackups = () => clientAPI.getBackups(id).then(r => setBackups(r.data.data));
 
   useEffect(() => { if (tab === 'backups') loadBackups(); }, [tab]);
+
+  const enableRescue = async () => {
+    if (!window.confirm('Enable rescue mode? Your VPS will be stopped and a rescue environment will boot with your disk mounted at /mnt/original.')) return;
+    setRescueLoading(true);
+    try {
+      const r = await clientAPI.enableRescue(id);
+      setRescuePassword(r.data.data.rescue_password);
+      toast.success('Rescue mode enabling — this may take a minute');
+      setTimeout(load, 10000);
+    } catch (e) { toast.error(e.response?.data?.error || 'Failed'); }
+    finally { setRescueLoading(false); }
+  };
+
+  const disableRescue = async () => {
+    if (!window.confirm('Exit rescue mode? The rescue container will be deleted and your original VPS will restart.')) return;
+    setRescueLoading(true);
+    try {
+      await clientAPI.disableRescue(id);
+      setRescuePassword(null);
+      toast.success('Exiting rescue mode');
+      setTimeout(load, 10000);
+    } catch (e) { toast.error(e.response?.data?.error || 'Failed'); }
+    finally { setRescueLoading(false); }
+  };
 
   const loadRdns = () => clientAPI.getRdns(id).then(r => setRdnsData(r.data.data)).catch(() => {});
 
@@ -161,7 +187,7 @@ export default function ClientVPSDetail() {
       </div>
 
       <div className="flex gap-1 mb-6 border-b border-slate-200">
-        {['overview','console','rdns','firewall','reinstall'].map(t => (
+        {['overview','console','rdns','firewall','rescue','reinstall'].map(t => (
           <button key={t} onClick={() => setTab(t)} className={`px-4 py-2 text-sm font-medium capitalize border-b-2 -mb-px transition-colors ${tab===t?'border-indigo-600 text-indigo-600':'border-transparent text-slate-500 hover:text-slate-700'}`}>{t}</button>
         ))}
       </div>
@@ -361,6 +387,59 @@ export default function ClientVPSDetail() {
               </button>
             </div>
           </div>
+        </div>
+      )}
+
+      {tab === 'rescue' && (
+        <div className="max-w-lg space-y-4">
+          {vps.rescue_mode ? (
+            <>
+              <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 flex gap-3">
+                <LifeBuoy size={20} className="text-amber-500 shrink-0 mt-0.5"/>
+                <div>
+                  <p className="font-semibold text-amber-800 mb-1">Rescue Mode Active</p>
+                  <p className="text-sm text-amber-700">Your original VPS is stopped. A rescue environment is running with your disk at <code className="font-mono">/mnt/original</code>. Fix your issues then exit rescue mode.</p>
+                </div>
+              </div>
+              <div className="bg-white rounded-xl border border-slate-200 p-5 space-y-3">
+                <h3 className="font-semibold text-slate-900">Rescue Credentials</h3>
+                <div className="bg-slate-50 rounded-lg p-3 font-mono text-sm space-y-1">
+                  <p><span className="text-slate-500">IP:</span> <span className="text-slate-900">{Array.isArray(vps.ip_addresses) && vps.ip_addresses.length > 0 ? vps.ip_addresses[0].ip_address : 'See overview'}</span></p>
+                  <p><span className="text-slate-500">User:</span> <span className="text-slate-900">root</span></p>
+                  {(rescuePassword || vps.rescue_password) && (
+                    <p><span className="text-slate-500">Password:</span> <span className="text-slate-900">{rescuePassword || vps.rescue_password}</span></p>
+                  )}
+                </div>
+                <p className="text-xs text-slate-500">Run <code className="font-mono bg-slate-100 px-1 rounded">chroot /mnt/original</code> to work inside your original OS.</p>
+                <button onClick={disableRescue} disabled={rescueLoading}
+                  className="w-full py-2 bg-slate-800 hover:bg-slate-900 text-white rounded-lg text-sm font-medium disabled:opacity-50">
+                  {rescueLoading ? 'Processing…' : 'Exit Rescue Mode'}
+                </button>
+              </div>
+            </>
+          ) : (
+            <>
+              <div className="bg-blue-50 border border-blue-200 rounded-xl p-4 flex gap-3">
+                <LifeBuoy size={20} className="text-blue-500 shrink-0 mt-0.5"/>
+                <div>
+                  <p className="font-semibold text-blue-800 mb-1">Rescue Mode</p>
+                  <p className="text-sm text-blue-700">Use rescue mode when you're locked out or your OS is broken. Your VPS will be stopped and a rescue environment will boot. Your original disk will be mounted at <code className="font-mono">/mnt/original</code> so your data is safe.</p>
+                </div>
+              </div>
+              <div className="bg-white rounded-xl border border-slate-200 p-5">
+                <ul className="text-sm text-slate-600 space-y-2 mb-5">
+                  <li>✓ Your data is preserved and accessible</li>
+                  <li>✓ SSH access restored with rescue credentials</li>
+                  <li>✓ Use <code className="font-mono bg-slate-100 px-1 rounded">chroot /mnt/original</code> to fix your OS</li>
+                  <li>✓ Exit rescue mode to restore normal operation</li>
+                </ul>
+                <button onClick={enableRescue} disabled={rescueLoading}
+                  className="w-full py-2 bg-amber-500 hover:bg-amber-600 text-white rounded-lg text-sm font-medium disabled:opacity-50">
+                  {rescueLoading ? 'Processing…' : 'Enable Rescue Mode'}
+                </button>
+              </div>
+            </>
+          )}
         </div>
       )}
 

@@ -9,7 +9,10 @@ async function getVpsForUser(vpsId, userId, role) {
     ? 'SELECT v.*, p.cpu, p.ram, p.disk, p.bandwidth, n.name as node_name, t.name as template_name FROM vps v JOIN plans p ON v.plan_id = p.id JOIN nodes n ON v.node_id = n.id LEFT JOIN templates t ON v.template_id = t.id WHERE v.id = ?'
     : 'SELECT v.*, p.cpu, p.ram, p.disk, p.bandwidth, n.name as node_name, t.name as template_name FROM vps v JOIN plans p ON v.plan_id = p.id JOIN nodes n ON v.node_id = n.id LEFT JOIN templates t ON v.template_id = t.id WHERE v.id = ? AND v.user_id = ?';
   const params = role === 'admin' ? [vpsId] : [vpsId, userId];
-  return queryOne(q, params);
+  const vps = await queryOne(q, params);
+  // Never expose rescue_password in listing - only show when explicitly returned from enable_rescue
+  if (vps) delete vps.rescue_password;
+  return vps;
 }
 
 export default async function clientVpsRoutes(fastify) {
@@ -174,6 +177,26 @@ export default async function clientVpsRoutes(fastify) {
       await proxmox.setFirewallOptions(node, vps.proxmox_vmid, req.body, vps.type);
       return reply.send({ success: true });
     } catch (err) { return reply.status(422).send({ success: false, error: err.message }); }
+  });
+
+  // Rescue mode
+  fastify.post('/:id/rescue', async (req, reply) => {
+    const vps = await getVpsForUser(req.params.id, req.user.id, req.user.role);
+    if (!vps) return reply.status(404).send({ success: false, error: 'VPS not found' });
+    if (vps.rescue_mode) return reply.status(422).send({ success: false, error: 'Already in rescue mode' });
+    const rescuePassword = Math.random().toString(36).slice(-8) + Math.random().toString(36).slice(-8);
+    const task = await query('INSERT INTO tasks (vps_id, user_id, type, status) VALUES (?, ?, "enable_rescue", "pending")', [vps.id, req.user.id]);
+    await addVpsJob('enable_rescue', { vpsId: vps.id, taskId: task.insertId, rescue_password: rescuePassword });
+    return reply.status(202).send({ success: true, message: 'Rescue mode enabling', data: { rescue_password: rescuePassword } });
+  });
+
+  fastify.delete('/:id/rescue', async (req, reply) => {
+    const vps = await getVpsForUser(req.params.id, req.user.id, req.user.role);
+    if (!vps) return reply.status(404).send({ success: false, error: 'VPS not found' });
+    if (!vps.rescue_mode) return reply.status(422).send({ success: false, error: 'Not in rescue mode' });
+    const task = await query('INSERT INTO tasks (vps_id, user_id, type, status) VALUES (?, ?, "disable_rescue", "pending")', [vps.id, req.user.id]);
+    await addVpsJob('disable_rescue', { vpsId: vps.id, taskId: task.insertId });
+    return reply.status(202).send({ success: true, message: 'Exiting rescue mode' });
   });
 
   // rDNS management via Leaseweb API

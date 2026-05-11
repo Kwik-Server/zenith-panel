@@ -198,6 +198,82 @@ async function processJob(job) {
       break;
     }
 
+    case 'enable_rescue': {
+      await setVpsStatus(vpsId, 'rescue');
+
+      // Get current container config to find original disk path
+      const config = await proxmox.getContainerConfig(node, vps.proxmox_vmid);
+      const rootfsParts = (config.rootfs || '').split(',');
+      const originalDiskPath = rootfsParts[0] || null;
+
+      // Stop original container
+      try {
+        if (type === 'kvm') await proxmox.stopKvmVm(node, vps.proxmox_vmid);
+        else await proxmox.stopLxcContainer(node, vps.proxmox_vmid);
+      } catch {}
+      await new Promise(r => setTimeout(r, 3000));
+
+      // Get IPs
+      const ips = await query('SELECT a.*, p.netmask, p.gateway FROM ip_addresses a JOIN ip_pools p ON a.pool_id = p.id WHERE a.vps_id = ? ORDER BY a.assigned_at', [vpsId]);
+      const netmaskToCidr = (nm) => nm ? nm.split('.').reduce((acc, o) => acc + (parseInt(o) >>> 0).toString(2).split('').filter(b => b === '1').length, 0) : 24;
+      const primaryIp = ips[0] || null;
+      const cidr = netmaskToCidr(primaryIp?.netmask);
+      const gw = primaryIp?.gateway || '';
+      const ipConfig = primaryIp ? `ip=${primaryIp.ip_address}/${cidr}${gw ? ',gw=' + gw : ''}` : 'ip=dhcp';
+      const additionalIpConfigs = ips.slice(1).map(ip => `ip=${ip.ip_address}/${netmaskToCidr(ip.netmask)}`);
+
+      // Create rescue container
+      const rescueVmid = await proxmox.getNextVmid(node);
+      const rescuePassword = job.data.rescue_password;
+      const rescueTemplate = job.data.rescue_template || 'local:vztmpl/rescue-ubuntu.tar.zst';
+
+      await proxmox.createRescueContainer(node, {
+        rescueVmid, rescueTemplate,
+        hostname: vps.hostname,
+        ipConfig, additionalIpConfigs,
+        password: rescuePassword,
+        originalDiskPath,
+        storage: node.storage,
+      });
+
+      // Update hostname to IP like normal VPS
+      if (primaryIp?.ip_address) {
+        await proxmox.updateLxcConfig(node, rescueVmid, { hostname: primaryIp.ip_address });
+      }
+
+      await proxmox.startLxcContainer(node, rescueVmid);
+
+      // Save rescue info
+      await query('UPDATE vps SET rescue_mode=1, rescue_vmid=?, rescue_password=? WHERE id=?',
+        [rescueVmid, rescuePassword, vpsId]);
+      break;
+    }
+
+    case 'disable_rescue': {
+      const rescueVmid = vps.rescue_vmid;
+
+      // Stop and delete rescue container
+      if (rescueVmid) {
+        try {
+          if (type === 'kvm') await proxmox.stopKvmVm(node, rescueVmid);
+          else await proxmox.stopLxcContainer(node, rescueVmid);
+        } catch {}
+        await new Promise(r => setTimeout(r, 2000));
+        try {
+          if (type === 'kvm') await proxmox.deleteKvmVm(node, rescueVmid);
+          else await proxmox.deleteLxcContainer(node, rescueVmid);
+        } catch {}
+      }
+
+      // Start original container
+      if (type === 'kvm') await proxmox.startKvmVm(node, vps.proxmox_vmid);
+      else await proxmox.startLxcContainer(node, vps.proxmox_vmid);
+
+      await query('UPDATE vps SET rescue_mode=0, rescue_vmid=NULL, rescue_password=NULL WHERE id=?', [vpsId]);
+      await setVpsStatus(vpsId, 'running');
+      break;
+    }
+
     default:
       throw new Error(`Unknown job type: ${job.name}`);
   }

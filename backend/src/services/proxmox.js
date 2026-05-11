@@ -311,6 +311,43 @@ export async function setFirewallOptions(node, vmid, options, type = 'lxc') {
   return req(node, 'PUT', `/nodes/${pveNode}/${path}/${vmid}/firewall/options`, options);
 }
 
+export async function getContainerConfig(node, vmid) {
+  const pveNode = node.proxmox_node || 'pve';
+  return req(node, 'GET', `/nodes/${pveNode}/lxc/${vmid}/config`);
+}
+
+export async function createRescueContainer(node, { rescueVmid, rescueTemplate, hostname, ipConfig, additionalIpConfigs = [], password, originalDiskPath, storage }) {
+  const pveNode = node.proxmox_node || 'pve';
+  const netIp = ipConfig || 'ip=dhcp';
+  const st = storage || node.storage || 'local';
+
+  const body = {
+    vmid:        rescueVmid,
+    ostemplate:  rescueTemplate,
+    hostname:    `rescue-${hostname}`,
+    cores:       1,
+    memory:      512,
+    swap:        256,
+    rootfs:      `${st}:4`,
+    password,
+    net0:        `name=eth0,bridge=vmbr0,${netIp},firewall=1`,
+    start:       0,
+    unprivileged: 1,
+  };
+
+  if (originalDiskPath) {
+    body.mp0 = `${originalDiskPath},mp=/mnt/original`;
+  }
+
+  additionalIpConfigs.forEach((ipConf, i) => {
+    body[`net${i + 1}`] = `name=eth${i + 1},bridge=vmbr0,${ipConf},firewall=1`;
+  });
+
+  const task = await req(node, 'POST', `/nodes/${pveNode}/lxc`, body);
+  await waitForTask(node, task);
+  return rescueVmid;
+}
+
 export async function updateLxcConfig(node, vmid, config) {
   const pveNode = node.proxmox_node || 'pve';
   await req(node, 'PUT', `/nodes/${pveNode}/lxc/${vmid}/config`, config);
