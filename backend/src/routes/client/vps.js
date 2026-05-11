@@ -6,8 +6,8 @@ import * as proxmox from '../../services/proxmox.js';
 
 async function getVpsForUser(vpsId, userId, role) {
   const q = role === 'admin'
-    ? 'SELECT v.*, p.cpu, p.ram, p.disk, p.bandwidth, n.name as node_name FROM vps v JOIN plans p ON v.plan_id = p.id JOIN nodes n ON v.node_id = n.id WHERE v.id = ?'
-    : 'SELECT v.*, p.cpu, p.ram, p.disk, p.bandwidth, n.name as node_name FROM vps v JOIN plans p ON v.plan_id = p.id JOIN nodes n ON v.node_id = n.id WHERE v.id = ? AND v.user_id = ?';
+    ? 'SELECT v.*, p.cpu, p.ram, p.disk, p.bandwidth, n.name as node_name, t.name as template_name FROM vps v JOIN plans p ON v.plan_id = p.id JOIN nodes n ON v.node_id = n.id LEFT JOIN templates t ON v.template_id = t.id WHERE v.id = ?'
+    : 'SELECT v.*, p.cpu, p.ram, p.disk, p.bandwidth, n.name as node_name, t.name as template_name FROM vps v JOIN plans p ON v.plan_id = p.id JOIN nodes n ON v.node_id = n.id LEFT JOIN templates t ON v.template_id = t.id WHERE v.id = ? AND v.user_id = ?';
   const params = role === 'admin' ? [vpsId] : [vpsId, userId];
   return queryOne(q, params);
 }

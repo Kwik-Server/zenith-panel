@@ -2,8 +2,22 @@ import React, { useState, useEffect } from 'react';
 import { useParams } from 'react-router-dom';
 import { clientAPI } from '../../api/client';
 import { useAuthStore } from '../../store/authStore';
-import { Play, Square, RotateCcw, Terminal, HardDrive, AlertTriangle } from 'lucide-react';
+import { Play, Square, RotateCcw, Terminal, AlertTriangle } from 'lucide-react';
 import toast from 'react-hot-toast';
+
+function OsIcon({ name }) {
+  const n = (name || '').toLowerCase();
+  let icon = null;
+  if      (n.includes('ubuntu'))  icon = 'ubuntu';
+  else if (n.includes('debian'))  icon = 'debian';
+  else if (n.includes('alma'))    icon = 'almalinux';
+  else if (n.includes('centos'))  icon = 'centos';
+  else if (n.includes('fedora'))  icon = 'fedora';
+  else if (n.includes('windows')) icon = 'windows';
+  else if (n.includes('rocky'))   icon = 'rockylinux';
+  if (!icon) return null;
+  return <img src={`https://cdn.simpleicons.org/${icon}`} alt={name} className="w-10 h-10 object-contain" onError={e => e.target.style.display='none'} />;
+}
 
 function VncConsole({ vpsId, token }) {
   const proto = window.location.protocol === 'https:' ? 'wss' : 'ws';
@@ -95,12 +109,25 @@ export default function ClientVPSDetail() {
       </div>
 
       {tab === 'overview' && (
-        <div className="bg-white rounded-xl border border-slate-200 p-6 max-w-lg">
-          <dl className="space-y-3">
-            {[['CPU',`${vps.cpu} vCPU`],['RAM',vps.ram>=1024?`${vps.ram/1024} GB`:`${vps.ram} MB`],['Disk',`${vps.disk} GB`],['Bandwidth',vps.bandwidth?`${vps.bandwidth} GB/mo`:'Unlimited'],['Type',vps.type?.toUpperCase()],['Node',vps.node_name]].map(([k,v]) => (
-              <div key={k} className="flex justify-between text-sm"><dt className="text-slate-500">{k}</dt><dd className="font-medium text-slate-900">{v}</dd></div>
-            ))}
-          </dl>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6 max-w-2xl">
+          <div className="bg-white rounded-xl border border-slate-200 p-6">
+            <h3 className="font-semibold text-slate-900 mb-4">Specifications</h3>
+            <dl className="space-y-3">
+              {[['CPU',`${vps.cpu} vCPU`],['RAM',vps.ram>=1024?`${vps.ram/1024} GB`:`${vps.ram} MB`],['Disk',`${vps.disk} GB`],['Bandwidth',vps.bandwidth?`${vps.bandwidth} GB/mo`:'Unlimited'],['Type',vps.type?.toUpperCase()],['Node',vps.node_name]].map(([k,v]) => (
+                <div key={k} className="flex justify-between text-sm"><dt className="text-slate-500">{k}</dt><dd className="font-medium text-slate-900">{v}</dd></div>
+              ))}
+            </dl>
+          </div>
+          <div className="bg-white rounded-xl border border-slate-200 p-6">
+            <h3 className="font-semibold text-slate-900 mb-4">Operating System</h3>
+            <div className="flex items-center gap-4">
+              <OsIcon name={vps.template_name} />
+              <div>
+                <p className="font-semibold text-slate-900">{vps.template_name || 'Unknown OS'}</p>
+                <p className="text-xs text-slate-400 mt-0.5">{vps.type?.toUpperCase()} Container</p>
+              </div>
+            </div>
+          </div>
         </div>
       )}
 
