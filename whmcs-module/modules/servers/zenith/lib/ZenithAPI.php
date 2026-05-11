@@ -31,7 +31,7 @@ class ZenithAPI {
 
     public function testConnection(): bool {
         try {
-            $result = $this->request('GET', '/ping');
+            $result = $this->request('GET', '/whmcs/ping');
             return isset($result['status']) && $result['status'] === 'ok';
         } catch (Exception $e) { return false; }
     }
