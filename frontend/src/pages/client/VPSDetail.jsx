@@ -1,14 +1,24 @@
 import React, { useState, useEffect } from 'react';
 import { useParams } from 'react-router-dom';
 import { clientAPI } from '../../api/client';
+import { useAuthStore } from '../../store/authStore';
 import { Play, Square, RotateCcw, Terminal, HardDrive, AlertTriangle } from 'lucide-react';
 import toast from 'react-hot-toast';
 
+function VncConsole({ vpsId, token }) {
+  const proto = window.location.protocol === 'https:' ? 'wss' : 'ws';
+  const wsUrl = `${proto}://${window.location.host}/api/v1/client/vps/${vpsId}/console/ws?token=${token}`;
+  const [VncScreen, setVncScreen] = useState(null);
+  useEffect(() => { import('react-vnc').then(m => setVncScreen(() => m.VncScreen)); }, []);
+  if (!VncScreen) return <div className="flex items-center justify-center h-full text-slate-400"><p className="text-sm">Loading console...</p></div>;
+  return <VncScreen url={wsUrl} scaleViewport style={{ width:'100%', height:'100%', background:'#000' }} />;
+}
+
 export default function ClientVPSDetail() {
   const { id } = useParams();
+  const token = useAuthStore(s => s.token);
   const [vps, setVps] = useState(null);
   const [tab, setTab] = useState('overview');
-  const [console_, setConsole] = useState(null);
   const [backups, setBackups] = useState([]);
   const [reinstallPw, setReinstallPw] = useState('');
   const [reinstalling, setReinstalling] = useState(false);
@@ -21,12 +31,6 @@ export default function ClientVPSDetail() {
     catch (e) { toast.error(e.response?.data?.error || 'Failed'); }
   };
 
-  const openConsole = async () => {
-    try {
-      const r = await clientAPI.vpsConsole(id);
-      setConsole(r.data.data); setTab('console');
-    } catch (e) { toast.error(e.response?.data?.error || 'Console unavailable'); }
-  };
 
   const loadBackups = () => clientAPI.getBackups(id).then(r => setBackups(r.data.data));
 
@@ -54,22 +58,18 @@ export default function ClientVPSDetail() {
 
   if (!vps) return <div className="p-8 text-slate-500">Loading…</div>;
 
-  const consoleUrl = console_
-    ? `https://${console_.host}:${console_.port}/?console=${vps.type === 'lxc' ? 'lxc' : 'kvm'}&novnc=1&vmid=${console_.vmid}&node=${vps.node_name}&resize=off&vncticket=${encodeURIComponent(console_.ticket)}`
-    : null;
-
   return (
     <div className="p-8">
       <div className="flex items-start justify-between mb-6">
         <div>
           <h1 className="text-2xl font-bold text-slate-900">{vps.hostname}</h1>
-          <p className="text-slate-500 text-sm mt-1 font-mono">{vps.ip_addresses?.[0]?.ip_address || 'No IP'}</p>
+          <p className="text-slate-500 text-sm mt-1 font-mono">{Array.isArray(vps.ip_addresses) && vps.ip_addresses.length > 0 ? vps.ip_addresses[0].ip_address : 'No IP'}</p>
         </div>
         <div className="flex gap-2">
           <button onClick={() => action('start','Start')} className="flex items-center gap-1.5 px-3 py-1.5 bg-green-600 text-white rounded-lg text-sm hover:bg-green-700"><Play size={14}/> Start</button>
           <button onClick={() => action('stop','Stop')} className="flex items-center gap-1.5 px-3 py-1.5 border border-slate-200 text-slate-600 rounded-lg text-sm hover:bg-slate-50"><Square size={14}/> Stop</button>
           <button onClick={() => action('restart','Restart')} className="flex items-center gap-1.5 px-3 py-1.5 border border-slate-200 text-slate-600 rounded-lg text-sm hover:bg-slate-50"><RotateCcw size={14}/> Restart</button>
-          <button onClick={openConsole} className="flex items-center gap-1.5 px-3 py-1.5 bg-indigo-600 text-white rounded-lg text-sm hover:bg-indigo-700"><Terminal size={14}/> Console</button>
+          <button onClick={() => setTab('console')} className="flex items-center gap-1.5 px-3 py-1.5 bg-indigo-600 text-white rounded-lg text-sm hover:bg-indigo-700"><Terminal size={14}/> Console</button>
         </div>
       </div>
 
@@ -90,15 +90,8 @@ export default function ClientVPSDetail() {
       )}
 
       {tab === 'console' && (
-        <div className="bg-black rounded-xl overflow-hidden" style={{height:600}}>
-          {consoleUrl
-            ? <iframe src={consoleUrl} className="w-full h-full border-0" title="Console"/>
-            : <div className="flex items-center justify-center h-full text-slate-400">
-                <div className="text-center">
-                  <Terminal size={48} className="mx-auto mb-4 opacity-30"/>
-                  <button onClick={openConsole} className="bg-indigo-600 text-white px-6 py-2 rounded-lg text-sm font-medium">Open Console</button>
-                </div>
-              </div>}
+        <div style={{height:600}}>
+          <VncConsole vpsId={id} token={token} />
         </div>
       )}
 

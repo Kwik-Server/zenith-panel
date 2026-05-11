@@ -70,6 +70,37 @@ export default async function clientVpsRoutes(fastify) {
     return reply.status(202).send({ success: true, message: 'Reinstall queued' });
   });
 
+  // WebSocket VNC proxy for client portal
+  fastify.get('/:id/console/ws', { websocket: true }, (socket, req) => {
+    return new Promise(async (resolve) => {
+      try {
+        const vps = await getVpsForUser(req.params.id, req.user?.id, req.user?.role);
+        if (!vps || !vps.proxmox_vmid) { socket.close(1008, 'VPS not found'); return resolve(); }
+
+        const node = await queryOne('SELECT * FROM nodes WHERE id = ?', [vps.node_id]);
+        const vncData = vps.type === 'lxc'
+          ? await proxmox.getLxcVncProxy(node, vps.proxmox_vmid)
+          : await proxmox.getKvmVncProxy(node, vps.proxmox_vmid);
+
+        const wsUrl = `wss://${vncData.host}:${vncData.port}${vncData.path}?port=${vncData.vncPort}&vncticket=${encodeURIComponent(vncData.ticket)}`;
+        const auth  = `PVEAPIToken=${node.api_token_id}=${node.api_token_secret}`;
+
+        const { default: WS } = await import('ws');
+        const upstream = new WS(wsUrl, ['binary'], { headers: { Authorization: auth }, rejectUnauthorized: false });
+
+        upstream.on('open', () => { socket.on('message', (data) => { if (upstream.readyState === 1) upstream.send(data); }); });
+        upstream.on('message', (data) => { try { socket.send(data); } catch {} });
+        upstream.on('error',   (err)  => { console.error('Client WS:', err.message); try { socket.close(1011); } catch {} resolve(); });
+        upstream.on('close',   ()     => { try { socket.close(); } catch {} resolve(); });
+        socket.on('close',     ()     => { upstream.close(); resolve(); });
+      } catch (err) {
+        console.error('Client console WS error:', err.message);
+        try { socket.close(1011); } catch {}
+        resolve();
+      }
+    });
+  });
+
   fastify.get('/:id/console', async (req, reply) => {
     const vps = await getVpsForUser(req.params.id, req.user.id, req.user.role);
     if (!vps) return reply.status(404).send({ success: false, error: 'VPS not found' });
