@@ -7,6 +7,10 @@ import bcrypt from 'bcryptjs';
 export default async function whmcsRoutes(fastify) {
   fastify.addHook('preHandler', whmcsAuth);
 
+  fastify.get('/ping', async (req, reply) => {
+    return reply.send({ success: true, data: { status: 'ok', version: '1.0.0' } });
+  });
+
   fastify.post('/provision', async (req, reply) => {
     const { plan_id, template_id, hostname, root_password, user_email, whmcs_service_id, node_id } = req.body || {};
     if (!plan_id || !template_id || !hostname || !root_password || !user_email) {
