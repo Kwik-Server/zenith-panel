@@ -115,11 +115,14 @@ systemctl enable nginx >> "$LOG_FILE" 2>&1
 success "Nginx + Certbot installed"
 
 step "Installing Zenith files"
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO_URL="https://github.com/Kwik-Server/zenith-panel.git"
 mkdir -p "$PANEL_DIR" /var/log/zenith
-cp -r "$SCRIPT_DIR/backend"  "$PANEL_DIR/"
-cp -r "$SCRIPT_DIR/frontend" "$PANEL_DIR/"
-cp -r "$SCRIPT_DIR/config"   "$PANEL_DIR/"
+if [ -d "/tmp/zenith-src" ]; then rm -rf /tmp/zenith-src; fi
+git clone --depth=1 "$REPO_URL" /tmp/zenith-src >> "$LOG_FILE" 2>&1 || error "Failed to clone repository"
+cp -r /tmp/zenith-src/backend  "$PANEL_DIR/"
+cp -r /tmp/zenith-src/frontend "$PANEL_DIR/"
+cp -r /tmp/zenith-src/config   "$PANEL_DIR/"
+rm -rf /tmp/zenith-src
 
 cat > "$PANEL_DIR/backend/.env" << ENVEOF
 NODE_ENV=production
