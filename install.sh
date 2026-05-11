@@ -112,9 +112,9 @@ step "Installing Redis"
 if ! command -v redis-server &>/dev/null; then
     apt-get install -y -qq redis-server >> "$LOG_FILE" 2>&1
 fi
-sed -i "s/^# requirepass .*/requirepass ${REDIS_PASS}/" /etc/redis/redis.conf
-sed -i "s/^requirepass .*/requirepass ${REDIS_PASS}/" /etc/redis/redis.conf
+sed -i '/^requirepass/d' /etc/redis/redis.conf
 echo "requirepass ${REDIS_PASS}" >> /etc/redis/redis.conf
+sed -i 's/^supervised no/supervised systemd/' /etc/redis/redis.conf
 systemctl enable redis-server >> "$LOG_FILE" 2>&1
 systemctl restart redis-server >> "$LOG_FILE" 2>&1
 success "Redis configured"
@@ -191,10 +191,14 @@ cp "$PANEL_DIR/config/nginx.conf" /etc/nginx/sites-available/zenith
 sed -i "s/YOUR_DOMAIN/${PANEL_DOMAIN}/g" /etc/nginx/sites-available/zenith
 ln -sf /etc/nginx/sites-available/zenith /etc/nginx/sites-enabled/zenith
 rm -f /etc/nginx/sites-enabled/default
-nginx -t >> "$LOG_FILE" 2>&1 && systemctl reload nginx >> "$LOG_FILE" 2>&1
-certbot --nginx -d "$PANEL_DOMAIN" --non-interactive --agree-tos -m "$ADMIN_EMAIL" --redirect >> "$LOG_FILE" 2>&1 || \
-    warn "SSL failed. Run: certbot --nginx -d ${PANEL_DOMAIN}"
-success "Nginx configured"
+
+# Get SSL cert using standalone mode (more reliable than nginx plugin)
+systemctl stop nginx >> "$LOG_FILE" 2>&1 || true
+certbot register --email "$ADMIN_EMAIL" --agree-tos -n >> "$LOG_FILE" 2>&1 || true
+certbot certonly --standalone -d "$PANEL_DOMAIN" -n >> "$LOG_FILE" 2>&1 || \
+    warn "SSL failed. Run manually: certbot certonly --standalone -d ${PANEL_DOMAIN}"
+systemctl start nginx >> "$LOG_FILE" 2>&1 || true
+success "Nginx + SSL configured"
 
 step "Starting services with PM2"
 cp "$PANEL_DIR/config/ecosystem.config.cjs" "$PANEL_DIR/"
