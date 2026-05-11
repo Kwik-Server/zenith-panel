@@ -147,11 +147,13 @@ function zenith_AdminLink(array $params): string {
 }
 
 function zenith_ClientArea(array $params): array {
-    $scheme  = !empty($params['serversecure']) ? 'https' : 'http';
+    $scheme   = !empty($params['serversecure']) ? 'https' : 'http';
     $panelUrl = "{$scheme}://{$params['serverhostname']}";
-    $uuid    = _zenith_getuuid($params);
+    $uuid     = _zenith_getuuid($params);
 
-    $status = 'Unknown';
+    $status    = 'Unknown';
+    $loginUrl  = $panelUrl . '/login';
+
     if ($uuid) {
         try {
             $data   = _zenith_api($params)->getStatus($uuid);
@@ -159,12 +161,24 @@ function zenith_ClientArea(array $params): array {
         } catch (Exception $e) {}
     }
 
+    // Generate magic link for auto-login
+    try {
+        $api      = _zenith_api($params);
+        $email    = $params['clientsdetails']['email'];
+        $result   = $api->generateLoginToken($email);
+        $token    = $result['token'] ?? '';
+        if ($token) {
+            $loginUrl = $panelUrl . '/autologin?token=' . urlencode($token);
+        }
+    } catch (Exception $e) {}
+
     return [
         'templatefile' => 'clientarea',
         'vars' => [
             'panel_url' => $panelUrl,
             'uuid'      => $uuid,
             'status'    => $status,
+            'login_url' => $loginUrl,
         ],
     ];
 }

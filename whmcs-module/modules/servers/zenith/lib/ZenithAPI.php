@@ -29,6 +29,10 @@ class ZenithAPI {
         return $this->request('GET', "/whmcs/{$uuid}/status");
     }
 
+    public function generateLoginToken(string $email): array {
+        return $this->request('POST', '/whmcs/autologin', ['user_email' => $email]);
+    }
+
     public function testConnection(): bool {
         try {
             $result = $this->request('GET', '/whmcs/ping');

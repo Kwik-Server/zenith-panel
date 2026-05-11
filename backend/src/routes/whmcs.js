@@ -11,6 +11,18 @@ export default async function whmcsRoutes(fastify) {
     return reply.send({ success: true, data: { status: 'ok', version: '1.0.0' } });
   });
 
+  // Generate magic link token for auto-login
+  fastify.post('/autologin', async (req, reply) => {
+    const { user_email } = req.body || {};
+    if (!user_email) return reply.status(400).send({ success: false, error: 'user_email required' });
+    const user = await queryOne('SELECT * FROM users WHERE email = ? AND is_active = 1', [user_email]);
+    if (!user) return reply.status(404).send({ success: false, error: 'User not found' });
+    const token = uuidv4().replace(/-/g, '') + uuidv4().replace(/-/g, '');
+    const expiresAt = new Date(Date.now() + 5 * 60 * 1000); // 5 minutes
+    await query('INSERT INTO login_tokens (token, user_id, expires_at) VALUES (?, ?, ?)', [token, user.id, expiresAt]);
+    return reply.send({ success: true, data: { token, expires_at: expiresAt } });
+  });
+
   fastify.post('/provision', async (req, reply) => {
     const { plan_id, template_id, hostname, root_password, user_email, whmcs_service_id, node_id } = req.body || {};
     if (!plan_id || !template_id || !hostname || !root_password || !user_email) {

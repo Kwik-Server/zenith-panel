@@ -35,6 +35,7 @@ export const authAPI = {
   login:      (d) => api.post('/auth/login', d),
   verify2fa:  (d) => api.post('/auth/2fa/verify', d),
   me:         ()  => api.get('/auth/me'),
+  autologin:  (t) => api.get(`/auth/autologin?token=${t}`),
 };
 
 // Admin

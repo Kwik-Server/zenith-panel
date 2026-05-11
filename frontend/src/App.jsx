@@ -2,6 +2,7 @@ import React from 'react';
 import { Routes, Route, Navigate } from 'react-router-dom';
 import { useAuthStore } from './store/authStore';
 import Login from './pages/Login';
+import AutoLogin from './pages/AutoLogin';
 import AdminLayout from './components/layout/AdminLayout';
 import ClientLayout from './components/layout/ClientLayout';
 import Dashboard from './pages/admin/Dashboard';
@@ -30,6 +31,7 @@ export default function App() {
   return (
     <Routes>
       <Route path="/login" element={<Login />} />
+      <Route path="/autologin" element={<AutoLogin />} />
       <Route path="/admin" element={<RequireAuth role="admin"><AdminLayout /></RequireAuth>}>
         <Route path="dashboard" element={<Dashboard />} />
         <Route path="vps" element={<VPSList />} />

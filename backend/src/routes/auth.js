@@ -65,4 +65,21 @@ export default async function authRoutes(fastify) {
     const u = req.user;
     return reply.send({ success: true, data: { id: u.id, email: u.email, role: u.role, first_name: u.first_name, last_name: u.last_name } });
   });
+
+  // Magic link auto-login
+  fastify.get('/autologin', async (req, reply) => {
+    const { token } = req.query;
+    if (!token) return reply.status(400).send({ success: false, error: 'Token required' });
+    const row = await queryOne('SELECT * FROM login_tokens WHERE token = ? AND used = 0 AND expires_at > NOW()', [token]);
+    if (!row) return reply.status(401).send({ success: false, error: 'Invalid or expired token' });
+    await query('UPDATE login_tokens SET used = 1 WHERE id = ?', [row.id]);
+    const user = await queryOne('SELECT * FROM users WHERE id = ? AND is_active = 1', [row.user_id]);
+    if (!user) return reply.status(404).send({ success: false, error: 'User not found' });
+    await logAction(user.id, 'autologin', 'user', user.id, null, req.ip);
+    return reply.send({ success: true, data: {
+      token: signToken({ id: user.id, role: user.role }),
+      refreshToken: signRefreshToken({ id: user.id }),
+      user: { id: user.id, email: user.email, role: user.role, first_name: user.first_name, last_name: user.last_name },
+    }});
+  });
 }
