@@ -109,6 +109,7 @@ export const adminAPI = {
 // Client
 export const clientAPI = {
   getVps:         ()      => api.get('/client/vps'),
+  getTemplates:   ()      => api.get('/client/vps/templates'),
   getVpsDetail:   (id)    => api.get(`/client/vps/${id}`),
   vpsAction:      (id, a) => api.post(`/client/vps/${id}/${a}`),
   vpsStats:       (id)    => api.get(`/client/vps/${id}/stats`),

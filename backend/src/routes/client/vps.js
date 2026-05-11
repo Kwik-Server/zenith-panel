@@ -15,6 +15,11 @@ async function getVpsForUser(vpsId, userId, role) {
 export default async function clientVpsRoutes(fastify) {
   fastify.addHook('preHandler', authenticate);
 
+  fastify.get('/templates', async (req, reply) => {
+    const rows = await query('SELECT id, name, type, os_family FROM templates WHERE is_active = 1 ORDER BY name');
+    return reply.send({ success: true, data: rows });
+  });
+
   fastify.get('/', async (req, reply) => {
     const rows = await query(
       `SELECT v.id, v.hostname, v.status, v.type, v.created_at, p.cpu, p.ram, p.disk,
@@ -63,10 +68,10 @@ export default async function clientVpsRoutes(fastify) {
   fastify.post('/:id/reinstall', async (req, reply) => {
     const vps = await getVpsForUser(req.params.id, req.user.id, req.user.role);
     if (!vps) return reply.status(404).send({ success: false, error: 'VPS not found' });
-    const { root_password } = req.body || {};
+    const { root_password, template_id } = req.body || {};
     if (!root_password) return reply.status(400).send({ success: false, error: 'root_password required' });
     const task = await query('INSERT INTO tasks (vps_id, user_id, type, status) VALUES (?, ?, "reinstall_vps", "pending")', [vps.id, req.user.id]);
-    await addVpsJob('reinstall_vps', { vpsId: vps.id, taskId: task.insertId, root_password });
+    await addVpsJob('reinstall_vps', { vpsId: vps.id, taskId: task.insertId, root_password, template_id: template_id || null });
     return reply.status(202).send({ success: true, message: 'Reinstall queued' });
   });
 

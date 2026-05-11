@@ -21,7 +21,9 @@ export default function ClientVPSDetail() {
   const [tab, setTab] = useState('overview');
   const [backups, setBackups] = useState([]);
   const [reinstallPw, setReinstallPw] = useState('');
+  const [reinstallTpl, setReinstallTpl] = useState('');
   const [reinstalling, setReinstalling] = useState(false);
+  const [templates, setTemplates] = useState([]);
 
   const load = () => clientAPI.getVpsDetail(id).then(r => setVps(r.data.data));
   useEffect(() => { load(); }, [id]);
@@ -35,6 +37,14 @@ export default function ClientVPSDetail() {
   const loadBackups = () => clientAPI.getBackups(id).then(r => setBackups(r.data.data));
 
   useEffect(() => { if (tab === 'backups') loadBackups(); }, [tab]);
+
+  useEffect(() => {
+    if (tab === 'reinstall' && vps) {
+      clientAPI.getTemplates()
+        .then(r => setTemplates(r.data.data.filter(t => t.type === vps.type)))
+        .catch(() => {});
+    }
+  }, [tab, vps]);
 
   const createBackup = async () => {
     try { await clientAPI.createBackup(id); toast.success('Backup queued'); setTimeout(loadBackups, 2000); }
@@ -51,7 +61,12 @@ export default function ClientVPSDetail() {
     if (!window.confirm('Reinstall OS? All data on this VPS will be erased.')) return;
     if (!reinstallPw || reinstallPw.length < 8) { toast.error('Password must be at least 8 characters'); return; }
     setReinstalling(true);
-    try { await clientAPI.reinstall(id, { root_password: reinstallPw }); toast.success('Reinstall queued'); setReinstallPw(''); }
+    try {
+      await clientAPI.reinstall(id, { root_password: reinstallPw, template_id: reinstallTpl || undefined });
+      toast.success('Reinstall queued');
+      setReinstallPw('');
+      setReinstallTpl('');
+    }
     catch (e) { toast.error(e.response?.data?.error || 'Failed'); }
     finally { setReinstalling(false); }
   };
@@ -122,10 +137,20 @@ export default function ClientVPSDetail() {
               <p>Reinstalling the OS will destroy all files, databases, and configurations on this VPS. This cannot be undone.</p>
             </div>
           </div>
-          <div className="bg-white rounded-xl border border-slate-200 p-5">
-            <label className="block text-sm font-medium text-slate-700 mb-1">New Root Password</label>
-            <input type="password" value={reinstallPw} onChange={e => setReinstallPw(e.target.value)} placeholder="Min 8 characters"
-              className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm focus:ring-2 focus:ring-red-500 outline-none mb-4"/>
+          <div className="bg-white rounded-xl border border-slate-200 p-5 space-y-4">
+            <div>
+              <label className="block text-sm font-medium text-slate-700 mb-1">Operating System</label>
+              <select value={reinstallTpl} onChange={e => setReinstallTpl(e.target.value)}
+                className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm focus:ring-2 focus:ring-red-500 outline-none">
+                <option value="">Keep current OS</option>
+                {templates.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
+              </select>
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-slate-700 mb-1">New Root Password</label>
+              <input type="password" value={reinstallPw} onChange={e => setReinstallPw(e.target.value)} placeholder="Min 8 characters"
+                className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm focus:ring-2 focus:ring-red-500 outline-none"/>
+            </div>
             <button onClick={reinstall} disabled={reinstalling} className="w-full bg-red-600 hover:bg-red-700 text-white py-2 rounded-lg text-sm font-medium disabled:opacity-50">
               {reinstalling ? 'Queuing…' : 'Reinstall OS'}
             </button>
