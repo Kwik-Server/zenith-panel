@@ -16,9 +16,13 @@ function zenith_MetaData(): array {
 
 function zenith_ConfigOptions(): array {
     return [
-        'Plan ID'     => ['Type' => 'text', 'Size' => 10, 'Description' => 'Zenith Plan ID (number)'],
-        'Template ID' => ['Type' => 'text', 'Size' => 10, 'Description' => 'Zenith Template ID (number)'],
-        'Node ID'     => ['Type' => 'text', 'Size' => 10, 'Description' => 'Leave blank for auto-select'],
+        'Plan ID'             => ['Type' => 'text', 'Size' => 10, 'Description' => 'Zenith Plan ID (number)'],
+        'Default Template ID' => ['Type' => 'text', 'Size' => 10, 'Description' => 'Fallback template if no OS selected'],
+        'Node ID'             => ['Type' => 'text', 'Size' => 10, 'Description' => 'Leave blank for auto-select'],
+        'Ubuntu Template ID'  => ['Type' => 'text', 'Size' => 10, 'Description' => 'Template ID for Ubuntu'],
+        'Debian Template ID'  => ['Type' => 'text', 'Size' => 10, 'Description' => 'Template ID for Debian'],
+        'AlmaLinux 9 Template ID' => ['Type' => 'text', 'Size' => 10, 'Description' => 'Template ID for AlmaLinux 9'],
+        'AlmaLinux 8 Template ID' => ['Type' => 'text', 'Size' => 10, 'Description' => 'Template ID for AlmaLinux 8'],
     ];
 }
 
@@ -48,9 +52,21 @@ function zenith_CreateAccount(array $params): string {
             ?: strtolower(preg_replace('/[^a-z0-9\-]/', '', $params['username'])) . '.vps.local';
         $password = $params['password'] ?: bin2hex(random_bytes(8));
 
+        // Map selected OS to template ID (configoption4-7 per OS)
+        $osTemplateMap = [
+            'Ubuntu 22.04' => (int)($params['configoption4'] ?? 0),
+            'Debian 12'    => (int)($params['configoption5'] ?? 0),
+            'AlmaLinux 9'  => (int)($params['configoption6'] ?? 0),
+            'AlmaLinux 8'  => (int)($params['configoption7'] ?? 0),
+        ];
+        $selectedOs = $params['customfields']['Operating System'] ?? '';
+        $templateId = ($selectedOs && isset($osTemplateMap[$selectedOs]) && $osTemplateMap[$selectedOs])
+            ? $osTemplateMap[$selectedOs]
+            : (int)($params['configoption2'] ?? 0);
+
         $result = $api->provision([
             'plan_id'         => (int)($params['configoption1'] ?? 0),
-            'template_id'     => (int)($params['configoption2'] ?? 0),
+            'template_id'     => $templateId,
             'node_id'         => (int)($params['configoption3'] ?? 0) ?: null,
             'hostname'        => $hostname,
             'root_password'   => $password,
