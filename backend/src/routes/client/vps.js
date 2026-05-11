@@ -9,10 +9,7 @@ async function getVpsForUser(vpsId, userId, role) {
     ? 'SELECT v.*, p.cpu, p.ram, p.disk, p.bandwidth, n.name as node_name, t.name as template_name FROM vps v JOIN plans p ON v.plan_id = p.id JOIN nodes n ON v.node_id = n.id LEFT JOIN templates t ON v.template_id = t.id WHERE v.id = ?'
     : 'SELECT v.*, p.cpu, p.ram, p.disk, p.bandwidth, n.name as node_name, t.name as template_name FROM vps v JOIN plans p ON v.plan_id = p.id JOIN nodes n ON v.node_id = n.id LEFT JOIN templates t ON v.template_id = t.id WHERE v.id = ? AND v.user_id = ?';
   const params = role === 'admin' ? [vpsId] : [vpsId, userId];
-  const vps = await queryOne(q, params);
-  // Never expose rescue_password in listing - only show when explicitly returned from enable_rescue
-  if (vps) delete vps.rescue_password;
-  return vps;
+  return queryOne(q, params);
 }
 
 export default async function clientVpsRoutes(fastify) {
@@ -25,7 +22,7 @@ export default async function clientVpsRoutes(fastify) {
 
   fastify.get('/', async (req, reply) => {
     const rows = await query(
-      `SELECT v.id, v.hostname, v.status, v.type, v.created_at, p.cpu, p.ram, p.disk,
+      `SELECT v.id, v.hostname, v.status, v.type, v.created_at, v.rescue_mode, p.cpu, p.ram, p.disk,
               (SELECT ip_address FROM ip_addresses WHERE vps_id = v.id LIMIT 1) as ip_address,
               n.name as node_name
        FROM vps v JOIN plans p ON v.plan_id = p.id JOIN nodes n ON v.node_id = n.id
