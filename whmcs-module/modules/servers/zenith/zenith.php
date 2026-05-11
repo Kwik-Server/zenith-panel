@@ -42,12 +42,16 @@ function _zenith_getuuid(array $params): string {
 function zenith_CreateAccount(array $params): string {
     try {
         $api = _zenith_api($params);
+        $hostname = $params['domain']
+            ?: strtolower(preg_replace('/[^a-z0-9\-]/', '', $params['username'])) . '.vps.local';
+        $password = $params['password'] ?: bin2hex(random_bytes(8));
+
         $result = $api->provision([
-            'plan_id'         => (int)($params['configoptions']['Plan ID'] ?? 0),
-            'template_id'     => (int)($params['configoptions']['Template ID'] ?? 0),
-            'node_id'         => (int)($params['configoptions']['Node ID'] ?? 0) ?: null,
-            'hostname'        => $params['domain'] ?: strtolower(preg_replace('/[^a-z0-9\-]/', '', $params['username'])) . '.vps.example.com',
-            'root_password'   => $params['password'],
+            'plan_id'         => (int)($params['configoption1'] ?? 0),
+            'template_id'     => (int)($params['configoption2'] ?? 0),
+            'node_id'         => (int)($params['configoption3'] ?? 0) ?: null,
+            'hostname'        => $hostname,
+            'root_password'   => $password,
             'user_email'      => $params['clientsdetails']['email'],
             'whmcs_service_id'=> (string)$params['serviceid'],
         ]);
