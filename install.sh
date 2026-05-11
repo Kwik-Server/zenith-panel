@@ -32,7 +32,7 @@ BANNER
 echo ""
 }
 
-randpass() { tr -dc 'A-Za-z0-9!@$%' </dev/urandom | head -c 20 || true; }
+randpass() { tr -dc 'A-Za-z0-9' </dev/urandom | head -c 24 || true; }
 randstr()  { tr -dc 'a-z0-9' </dev/urandom | head -c 48 || true; }
 
 # Parse arguments
