@@ -199,7 +199,7 @@ async function processJob(job) {
     }
 
     case 'enable_rescue': {
-      await setVpsStatus(vpsId, 'rescue');
+      await setVpsStatus(vpsId, 'stopped');
 
       // Get current container config to find original disk path
       const config = await proxmox.getContainerConfig(node, vps.proxmox_vmid);
