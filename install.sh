@@ -101,7 +101,8 @@ if ! command -v mysql &>/dev/null; then
 fi
 mysql -u root -e "
     CREATE DATABASE IF NOT EXISTS zenith CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
-    CREATE USER IF NOT EXISTS 'zenith'@'localhost' IDENTIFIED BY '${DB_PASS}';
+    DROP USER IF EXISTS 'zenith'@'localhost';
+    CREATE USER 'zenith'@'localhost' IDENTIFIED BY '${DB_PASS}';
     GRANT ALL PRIVILEGES ON zenith.* TO 'zenith'@'localhost';
     FLUSH PRIVILEGES;
 " >> "$LOG_FILE" 2>&1
