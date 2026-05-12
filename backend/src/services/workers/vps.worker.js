@@ -243,7 +243,6 @@ async function processJob(job) {
 
       await proxmox.startLxcContainer(node, rescueVmid);
 
-      // Save rescue info
       await query('UPDATE vps SET rescue_mode=1, rescue_vmid=?, rescue_password=? WHERE id=?',
         [rescueVmid, rescuePassword, vpsId]);
       break;
@@ -278,7 +277,7 @@ async function processJob(job) {
       throw new Error(`Unknown job type: ${job.name}`);
   }
 
-  await setTaskStatus(taskId, 'completed');
+  await setTaskStatus(taskId, 'completed').catch(() => {});
 }
 
 export function startWorkers() {
@@ -291,7 +290,10 @@ export function startWorkers() {
         ['failed', err.message, job.data.taskId]).catch(() => {});
     }
     if (job?.data?.vpsId) {
-      await query('UPDATE vps SET status = ? WHERE id = ?', ['error', job.data.vpsId]).catch(() => {});
+      const vpsRow = await query('SELECT rescue_mode FROM vps WHERE id = ?', [job.data.vpsId]).catch(() => []);
+      if (!vpsRow[0]?.rescue_mode) {
+        await query('UPDATE vps SET status = ? WHERE id = ?', ['error', job.data.vpsId]).catch(() => {});
+      }
     }
   });
 
