@@ -48,7 +48,11 @@ export default function ClientVPSDetail() {
   const [ruleForm, setRuleForm] = useState({ type: 'in', action: 'ACCEPT', proto: 'tcp', dport: '', sport: '', source: '', dest: '', comment: '', enable: 1 });
 
   const load = () => clientAPI.getVpsDetail(id).then(r => setVps(r.data.data));
-  useEffect(() => { load(); }, [id]);
+  useEffect(() => {
+    load();
+    const saved = sessionStorage.getItem(`rescue_pw_${id}`);
+    if (saved) setRescuePassword(saved);
+  }, [id]);
 
   const action = async (a, label) => {
     try { await clientAPI.vpsAction(id, a); toast.success(`${label} queued`); setTimeout(load, 1500); }
@@ -65,9 +69,11 @@ export default function ClientVPSDetail() {
     setRescueLoading(true);
     try {
       const r = await clientAPI.enableRescue(id);
-      setRescuePassword(r.data.data.rescue_password);
+      const pw = r.data.data.rescue_password;
+      setRescuePassword(pw);
+      sessionStorage.setItem(`rescue_pw_${id}`, pw);
       toast.success('Rescue mode enabling — this may take a minute');
-      setTimeout(load, 10000);
+      setTimeout(load, 15000);
     } catch (e) { toast.error(e.response?.data?.error || 'Failed'); }
     finally { setRescueLoading(false); }
   };
@@ -78,8 +84,9 @@ export default function ClientVPSDetail() {
     try {
       await clientAPI.disableRescue(id);
       setRescuePassword(null);
+      sessionStorage.removeItem(`rescue_pw_${id}`);
       toast.success('Exiting rescue mode');
-      setTimeout(load, 10000);
+      setTimeout(load, 15000);
     } catch (e) { toast.error(e.response?.data?.error || 'Failed'); }
     finally { setRescueLoading(false); }
   };
@@ -406,8 +413,8 @@ export default function ClientVPSDetail() {
                 <div className="bg-slate-50 rounded-lg p-3 font-mono text-sm space-y-1">
                   <p><span className="text-slate-500">IP:</span> <span className="text-slate-900">{Array.isArray(vps.ip_addresses) && vps.ip_addresses.length > 0 ? vps.ip_addresses[0].ip_address : 'See overview'}</span></p>
                   <p><span className="text-slate-500">User:</span> <span className="text-slate-900">root</span></p>
-                  {(rescuePassword || vps.rescue_password) && (
-                    <p><span className="text-slate-500">Password:</span> <span className="text-slate-900">{rescuePassword || vps.rescue_password}</span></p>
+                  {(rescuePassword || vps.rescue_password || sessionStorage.getItem(`rescue_pw_${id}`)) && (
+                    <p><span className="text-slate-500">Password:</span> <span className="text-slate-900">{rescuePassword || vps.rescue_password || sessionStorage.getItem(`rescue_pw_${id}`)}</span></p>
                   )}
                 </div>
                 <p className="text-xs text-slate-500">Run <code className="font-mono bg-slate-100 px-1 rounded">chroot /mnt/original</code> to work inside your original OS.</p>
