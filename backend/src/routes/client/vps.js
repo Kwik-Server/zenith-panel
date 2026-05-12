@@ -171,7 +171,7 @@ export default async function clientVpsRoutes(fastify) {
     if (!vps || !vps.proxmox_vmid) return reply.status(404).send({ success: false, error: 'VPS not found' });
     const node = await queryOne('SELECT * FROM nodes WHERE id = ?', [vps.node_id]);
     try {
-      await proxmox.setFirewallOptions(node, vps.proxmox_vmid, req.body, vps.type);
+      await proxmox.setFirewallOptions(node, vps.proxmox_vmid, { ...req.body, policy_in: 'ACCEPT', policy_out: 'ACCEPT' }, vps.type);
       return reply.send({ success: true });
     } catch (err) { return reply.status(422).send({ success: false, error: err.message }); }
   });
