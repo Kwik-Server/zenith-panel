@@ -76,6 +76,8 @@ async function processJob(job) {
           await proxmox.updateLxcConfig(node, vmid, { hostname: job.data.ip });
         }
         await proxmox.startLxcContainer(node, vmid);
+        await new Promise(r => setTimeout(r, 2000));
+        await proxmox.enableContainerFirewall(node, vmid);
       }
 
       await setVpsStatus(vpsId, 'running');
@@ -242,6 +244,8 @@ async function processJob(job) {
       }
 
       await proxmox.startLxcContainer(node, rescueVmid);
+      await new Promise(r => setTimeout(r, 3000));
+      await proxmox.enableContainerFirewall(node, rescueVmid);
 
       await query('UPDATE vps SET rescue_mode=1, rescue_vmid=?, rescue_password=? WHERE id=?',
         [rescueVmid, rescuePassword, vpsId]);

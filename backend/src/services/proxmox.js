@@ -316,6 +316,15 @@ export async function getContainerConfig(node, vmid) {
   return req(node, 'GET', `/nodes/${pveNode}/lxc/${vmid}/config`);
 }
 
+export async function enableContainerFirewall(node, vmid) {
+  const pveNode = node.proxmox_node || 'pve';
+  try {
+    await req(node, 'PUT', `/nodes/${pveNode}/lxc/${vmid}/firewall/options`, {
+      enable: 1, policy_in: 'ACCEPT', policy_out: 'ACCEPT'
+    });
+  } catch {}
+}
+
 export async function createRescueContainer(node, { rescueVmid, rescueTemplate, hostname, ipConfig, additionalIpConfigs = [], password, originalDiskPath, storage }) {
   const pveNode = node.proxmox_node || 'pve';
   const netIp = ipConfig || 'ip=dhcp';
