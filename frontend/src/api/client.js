@@ -112,6 +112,7 @@ export const adminAPI = {
 export const clientAPI = {
   getVps:         ()      => api.get('/client/vps'),
   getTemplates:   ()      => api.get('/client/vps/templates'),
+  updateVps:      (id, d) => api.put(`/client/vps/${id}`, d),
   enableRescue:   (id)    => api.post(`/client/vps/${id}/rescue`),
   disableRescue:  (id)    => api.delete(`/client/vps/${id}/rescue`),
   getRdns:        (id)    => api.get(`/client/vps/${id}/rdns`),

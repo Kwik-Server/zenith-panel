@@ -59,13 +59,17 @@ export default async function ipPoolRoutes(fastify) {
     const pool = await queryOne('SELECT * FROM ip_pools WHERE id = ?', [req.params.id]);
     if (!pool) return reply.status(404).send({ success: false, error: 'Pool not found' });
     let added = 0;
+    let skipped = 0;
     for (const ip of ip_addresses) {
+      const exists = await queryOne('SELECT id FROM ip_addresses WHERE ip_address = ?', [ip.trim()]);
+      if (exists) { skipped++; continue; }
       try {
         await query('INSERT INTO ip_addresses (ip_address, pool_id) VALUES (?, ?)', [ip.trim(), req.params.id]);
         added++;
-      } catch {}
+      } catch { skipped++; }
     }
-    return reply.send({ success: true, message: `${added} IPs added` });
+    const msg = skipped > 0 ? `${added} IPs added, ${skipped} skipped (already exist in another pool)` : `${added} IPs added`;
+    return reply.send({ success: true, message: msg });
   });
 
   fastify.delete('/:id/ips/:ipId', async (req, reply) => {

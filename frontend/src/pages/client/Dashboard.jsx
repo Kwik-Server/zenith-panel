@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { clientAPI } from '../../api/client';
-import { Play, Square, RotateCcw } from 'lucide-react';
+import { Play, Square, RotateCcw, Settings } from 'lucide-react';
 import toast from 'react-hot-toast';
 
 const STATUS = { running:'bg-green-100 text-green-700', stopped:'bg-slate-100 text-slate-600', suspended:'bg-amber-100 text-amber-700', creating:'bg-indigo-100 text-indigo-700', error:'bg-red-100 text-red-700' };
@@ -25,7 +25,12 @@ export default function ClientDashboard() {
           <div key={v.id} className="bg-white rounded-xl border border-slate-200 p-5">
             <div className="flex items-start justify-between mb-3">
               <div>
-                <Link to={`/client/vps/${v.id}`} className="font-semibold text-slate-900 hover:text-indigo-600">{v.hostname}</Link>
+                <div className="flex items-center gap-2">
+                  <span className="font-semibold text-slate-900">{v.hostname}</span>
+                  <Link to={`/client/vps/${v.id}`} className="flex items-center gap-1 text-xs bg-indigo-600 hover:bg-indigo-700 text-white px-2 py-0.5 rounded font-medium">
+                    <Settings size={11}/> Manage
+                  </Link>
+                </div>
                 <p className="text-sm text-slate-500 font-mono mt-0.5">{v.ip_address || 'IP pending'}</p>
               </div>
               <span className={`px-2.5 py-0.5 rounded-full text-xs font-semibold ${STATUS[v.status]}`}>{v.status}</span>

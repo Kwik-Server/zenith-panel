@@ -176,6 +176,15 @@ export default async function clientVpsRoutes(fastify) {
     } catch (err) { return reply.status(422).send({ success: false, error: err.message }); }
   });
 
+  // Update VPS (hostname)
+  fastify.put('/:id', async (req, reply) => {
+    const vps = await getVpsForUser(req.params.id, req.user.id, req.user.role);
+    if (!vps) return reply.status(404).send({ success: false, error: 'VPS not found' });
+    const { hostname } = req.body || {};
+    if (hostname) await query('UPDATE vps SET hostname=? WHERE id=?', [hostname, vps.id]);
+    return reply.send({ success: true });
+  });
+
   // Rescue mode
   fastify.post('/:id/rescue', async (req, reply) => {
     const vps = await getVpsForUser(req.params.id, req.user.id, req.user.role);

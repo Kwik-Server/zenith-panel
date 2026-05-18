@@ -43,22 +43,33 @@ export default function IPPools() {
     const ips = ipsText.split('\n').map(s => s.trim()).filter(Boolean);
     if (!ips.length) return;
     try {
-      await adminAPI.addIps(poolId, { ip_addresses: ips });
-      toast.success(`${ips.length} IPs added`);
+      const r = await adminAPI.addIps(poolId, { ip_addresses: ips });
+      toast.success(r.data.message || 'IPs added');
       setShowIps(null); setIpsText('');
-      const r = await adminAPI.getPool(poolId);
-      setPoolDetail(d => ({ ...d, [poolId]: r.data.data }));
+      const pool = await adminAPI.getPool(poolId);
+      setPoolDetail(d => ({ ...d, [poolId]: pool.data.data }));
       load();
     } catch (e) { toast.error(e.response?.data?.error || 'Failed'); }
   };
 
-  const removeIp = async (poolId, ipId) => {
+  const removeIp = async (poolId, ipId, ipAddress) => {
+    if (!window.confirm(`Remove IP ${ipAddress} from pool?`)) return;
     try {
       await adminAPI.removeIp(poolId, ipId);
+      toast.success(`${ipAddress} removed`);
       const r = await adminAPI.getPool(poolId);
       setPoolDetail(d => ({ ...d, [poolId]: r.data.data }));
       load();
-    } catch (e) { toast.error(e.response?.data?.error || 'IP is assigned to a VPS'); }
+    } catch (e) { toast.error(e.response?.data?.error || 'IP is assigned to a VPS — delete the VPS first'); }
+  };
+
+  const deletePool = async (p) => {
+    if (!window.confirm(`Delete pool "${p.name}"? All unassigned IPs will be removed.`)) return;
+    try {
+      await adminAPI.deletePool(p.id);
+      toast.success('Pool deleted');
+      load();
+    } catch (e) { toast.error(e.response?.data?.error || 'Pool has IPs assigned to VPS — remove them first'); }
   };
 
   return (
@@ -78,6 +89,7 @@ export default function IPPools() {
               <div className="flex items-center gap-3">
                 <button onClick={e => { e.stopPropagation(); openEdit(p); }} className="p-1.5 text-slate-400 hover:text-indigo-600"><Pencil size={15}/></button>
                 <button onClick={e => { e.stopPropagation(); setShowIps(p.id); setIpsText(''); }} className="text-sm text-indigo-600 hover:text-indigo-800 font-medium">+ Add IPs</button>
+                <button onClick={e => { e.stopPropagation(); deletePool(p); }} className="p-1.5 text-slate-400 hover:text-red-600"><Trash2 size={15}/></button>
                 {expanded === p.id ? <ChevronUp size={18} className="text-slate-400"/> : <ChevronDown size={18} className="text-slate-400"/>}
               </div>
             </div>
@@ -87,7 +99,7 @@ export default function IPPools() {
                   {poolDetail[p.id].ips?.map(ip => (
                     <div key={ip.id} className={`flex items-center justify-between px-3 py-2 rounded-lg text-sm font-mono ${ip.vps_id ? 'bg-rose-50 text-rose-700' : 'bg-slate-50 text-slate-700'}`}>
                       <span>{ip.ip_address}</span>
-                      {!ip.vps_id && <button onClick={() => removeIp(p.id, ip.id)} className="text-slate-300 hover:text-red-500 ml-2"><Trash2 size={12}/></button>}
+                      {!ip.vps_id && <button onClick={() => removeIp(p.id, ip.id, ip.ip_address)} className="text-slate-300 hover:text-red-500 ml-2"><Trash2 size={12}/></button>}
                     </div>
                   ))}
                 </div>

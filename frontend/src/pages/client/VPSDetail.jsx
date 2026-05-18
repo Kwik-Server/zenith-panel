@@ -33,6 +33,8 @@ export default function ClientVPSDetail() {
   const token = useAuthStore(s => s.token);
   const [vps, setVps] = useState(null);
   const [tab, setTab] = useState('overview');
+  const [editingHostname, setEditingHostname] = useState(false);
+  const [newHostname, setNewHostname] = useState('');
   const [backups, setBackups] = useState([]);
   const [reinstallPw, setReinstallPw] = useState('');
   const [reinstallTpl, setReinstallTpl] = useState('');
@@ -53,6 +55,16 @@ export default function ClientVPSDetail() {
     const saved = sessionStorage.getItem(`rescue_pw_${id}`);
     if (saved) setRescuePassword(saved);
   }, [id]);
+
+  const saveHostname = async () => {
+    if (!newHostname.trim()) return;
+    try {
+      await clientAPI.updateVps(id, { hostname: newHostname.trim() });
+      toast.success('Hostname updated');
+      setEditingHostname(false);
+      load();
+    } catch (e) { toast.error(e.response?.data?.error || 'Failed'); }
+  };
 
   const action = async (a, label) => {
     try { await clientAPI.vpsAction(id, a); toast.success(`${label} queued`); setTimeout(load, 1500); }
@@ -182,7 +194,25 @@ export default function ClientVPSDetail() {
     <div className="p-8">
       <div className="flex items-start justify-between mb-6">
         <div>
-          <h1 className="text-2xl font-bold text-slate-900">{vps.hostname}</h1>
+          <div className="flex items-center gap-2">
+            {editingHostname ? (
+              <>
+                <input autoFocus value={newHostname} onChange={e => setNewHostname(e.target.value)}
+                  onKeyDown={e => { if (e.key === 'Enter') saveHostname(); if (e.key === 'Escape') setEditingHostname(false); }}
+                  className="text-2xl font-bold text-slate-900 border-b-2 border-indigo-500 outline-none bg-transparent w-64" />
+                <button onClick={saveHostname} className="text-xs bg-indigo-600 text-white px-2 py-1 rounded">Save</button>
+                <button onClick={() => setEditingHostname(false)} className="text-xs text-slate-500">Cancel</button>
+              </>
+            ) : (
+              <>
+                <h1 className="text-2xl font-bold text-slate-900">{vps.hostname}</h1>
+                <button onClick={() => { setNewHostname(vps.hostname); setEditingHostname(true); }}
+                  className="text-slate-400 hover:text-indigo-600 transition-colors" title="Edit hostname">
+                  <Pencil size={16}/>
+                </button>
+              </>
+            )}
+          </div>
           <p className="text-slate-500 text-sm mt-1 font-mono">{Array.isArray(vps.ip_addresses) && vps.ip_addresses.length > 0 ? vps.ip_addresses[0].ip_address : 'No IP'}</p>
         </div>
         <div className="flex gap-2">
@@ -204,7 +234,7 @@ export default function ClientVPSDetail() {
           <div className="bg-white rounded-xl border border-slate-200 p-6">
             <h3 className="font-semibold text-slate-900 mb-4">Specifications</h3>
             <dl className="space-y-3">
-              {[['CPU',`${vps.cpu} vCPU`],['RAM',vps.ram>=1024?`${vps.ram/1024} GB`:`${vps.ram} MB`],['Disk',`${vps.disk} GB`],['Bandwidth',vps.bandwidth?`${vps.bandwidth} GB/mo`:'Unlimited'],['Type',vps.type?.toUpperCase()],['Node',vps.node_name]].map(([k,v]) => (
+              {[['CPU',`${vps.cpu} vCPU`],['RAM',vps.ram>=1024?`${vps.ram/1024} GB`:`${vps.ram} MB`],['Disk',`${vps.disk} GB`],['Bandwidth',vps.bandwidth?`${vps.bandwidth} GB/mo`:'Unlimited'],['Location',vps.node_name]].map(([k,v]) => (
                 <div key={k} className="flex justify-between text-sm"><dt className="text-slate-500">{k}</dt><dd className="font-medium text-slate-900">{v}</dd></div>
               ))}
             </dl>
@@ -215,7 +245,7 @@ export default function ClientVPSDetail() {
               <OsIcon name={vps.template_name} />
               <div>
                 <p className="font-semibold text-slate-900">{vps.template_name || 'Unknown OS'}</p>
-                <p className="text-xs text-slate-400 mt-0.5">{vps.type?.toUpperCase()} Container</p>
+                <p className="text-xs text-slate-400 mt-0.5">{vps.template_name}</p>
               </div>
             </div>
           </div>
