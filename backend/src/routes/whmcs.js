@@ -101,8 +101,16 @@ export default async function whmcsRoutes(fastify) {
   });
 
   fastify.get('/:uuid/status', async (req, reply) => {
-    const vps = await queryOne('SELECT v.*, (SELECT ip_address FROM ip_addresses WHERE vps_id = v.id LIMIT 1) as ip FROM vps v WHERE v.uuid = ?', [req.params.uuid]);
+    const vps = await queryOne(
+      `SELECT v.*, p.cpu, p.ram, p.disk,
+              (SELECT ip_address FROM ip_addresses WHERE vps_id = v.id LIMIT 1) as ip_address
+       FROM vps v JOIN plans p ON v.plan_id = p.id WHERE v.uuid = ?`,
+      [req.params.uuid]
+    );
     if (!vps) return reply.status(404).send({ success: false, error: 'VPS not found' });
-    return reply.send({ success: true, data: { uuid: vps.uuid, status: vps.status, hostname: vps.hostname, ip: vps.ip } });
+    return reply.send({ success: true, data: {
+      uuid: vps.uuid, status: vps.status, hostname: vps.hostname,
+      ip_address: vps.ip_address, cpu: vps.cpu, ram: vps.ram, disk: vps.disk
+    }});
   });
 }

@@ -38,10 +38,17 @@ function _zenith_getuuid(array $params): string {
     if (!empty($params['customfields']['vps_uuid'])) {
         return $params['customfields']['vps_uuid'];
     }
-    // Fall back to service notes
+    // Try model notes
     if (preg_match('/VPS_UUID:([a-f0-9\-]{36})/i', $params['model']->notes ?? '', $m)) {
         return $m[1];
     }
+    // Direct DB lookup as last resort
+    try {
+        $notes = Capsule::table('tblhosting')->where('id', $params['serviceid'])->value('notes');
+        if ($notes && preg_match('/VPS_UUID:([a-f0-9\-]{36})/i', $notes, $m)) {
+            return $m[1];
+        }
+    } catch (\Exception $e) {}
     return '';
 }
 
@@ -151,34 +158,61 @@ function zenith_ClientArea(array $params): array {
     $panelUrl = "{$scheme}://{$params['serverhostname']}";
     $uuid     = _zenith_getuuid($params);
 
-    $status    = 'Unknown';
-    $loginUrl  = $panelUrl . '/login';
+    $status     = 'Unknown';
+    $loginUrl   = $panelUrl . '/login';
+    $serverInfo = null;
+    $ipAddress  = $params['model']->dedicatedip ?? '';
+    $osName     = $params['customfields']['Operating System'] ?? 'Linux VPS';
+    $error      = '';
 
     if ($uuid) {
         try {
             $data   = _zenith_api($params)->getStatus($uuid);
             $status = ucfirst($data['status'] ?? 'unknown');
-        } catch (Exception $e) {}
+            if (!empty($data['cpu'])) {
+                $serverInfo = [
+                    'cpu'  => $data['cpu'] . ' vCPU',
+                    'ram'  => ($data['ram'] >= 1024 ? round($data['ram']/1024) . 'G' : $data['ram'] . 'M'),
+                    'disk' => $data['disk'] . 'G',
+                ];
+            }
+            if (!empty($data['ip_address'])) $ipAddress = $data['ip_address'];
+        } catch (Exception $e) {
+            $error = 'Could not fetch VPS status.';
+        }
     }
 
     // Generate magic link for auto-login
     try {
-        $api      = _zenith_api($params);
-        $email    = $params['clientsdetails']['email'];
-        $result   = $api->generateLoginToken($email);
-        $token    = $result['token'] ?? '';
-        if ($token) {
-            $loginUrl = $panelUrl . '/autologin?token=' . urlencode($token);
-        }
+        $result = _zenith_api($params)->generateLoginToken($params['clientsdetails']['email']);
+        $token  = $result['token'] ?? '';
+        if ($token) $loginUrl = $panelUrl . '/autologin?token=' . urlencode($token);
     } catch (Exception $e) {}
+
+    // Status styling
+    $statusMap = [
+        'running'     => ['bg' => 'rgba(34,197,94,0.15)',  'color' => '#4ade80', 'dot' => '&#9679;'],
+        'stopped'     => ['bg' => 'rgba(148,163,184,0.15)','color' => '#94a3b8', 'dot' => '&#9675;'],
+        'suspended'   => ['bg' => 'rgba(251,191,36,0.15)', 'color' => '#fbbf24', 'dot' => '&#9651;'],
+        'reinstalling'=> ['bg' => 'rgba(99,102,241,0.15)', 'color' => '#818cf8', 'dot' => '&#9672;'],
+    ];
+    $statusLower = strtolower($status);
+    $s = $statusMap[$statusLower] ?? ['bg' => 'rgba(100,116,139,0.15)', 'color' => '#64748b', 'dot' => '&#8212;'];
 
     return [
         'templatefile' => 'clientarea',
         'vars' => [
-            'panel_url' => $panelUrl,
-            'uuid'      => $uuid,
-            'status'    => $status,
-            'login_url' => $loginUrl,
+            'hostname'    => $params['model']->domain ?: $ipAddress,
+            'status'      => $status,
+            'status_bg'   => $s['bg'],
+            'status_color'=> $s['color'],
+            'status_dot'  => $s['dot'],
+            'login_url'   => $loginUrl,
+            'ip_address'  => $ipAddress ?: 'Provisioning...',
+            'os_name'     => $osName,
+            'cpu'         => $serverInfo['cpu'] ?? '',
+            'ram'         => $serverInfo['ram'] ?? '',
+            'disk'        => $serverInfo['disk'] ?? '',
         ],
     ];
 }
