@@ -146,22 +146,21 @@ export async function createKvmVm(node, { vmid, templateVmid, hostname, cpus, ra
     });
   }
 
-  // Configure CPU/RAM
-  const config = { cores: cpus, memory: ram };
-
-  // Add cloud-init params only if the VM has a cloud-init drive
-  const vmConfig = await req(node, 'GET', `/nodes/${pveNode}/qemu/${vmid}/config`).catch(() => ({}));
-  const hasCloudInit = Object.values(vmConfig).some(v => String(v).includes('cloudinit'));
-
-  if (hasCloudInit) {
-    config.cipasswd = password;
-    config.ipconfig0 = ipConfig || 'ip=dhcp';
-    config.nameserver = '8.8.8.8';
-    config.searchdomain = 'localdomain';
-    await req(node, 'POST', `/nodes/${pveNode}/qemu/${vmid}/config`, config);
+  // Always add cloud-init drive and configure (works for both Linux cloud-init and Windows cloudbase-init)
+  try {
+    await req(node, 'PUT', `/nodes/${pveNode}/qemu/${vmid}/config`, {
+      cores:    cpus,
+      memory:   ram,
+      ide3:     `${storage}:cloudinit`,
+      cipasswd: password,
+      ipconfig0: ipConfig || 'ip=dhcp',
+      nameserver: '8.8.8.8',
+      searchdomain: 'localdomain',
+    });
     await req(node, 'POST', `/nodes/${pveNode}/qemu/${vmid}/cloudinit`).catch(() => {});
-  } else {
-    await req(node, 'POST', `/nodes/${pveNode}/qemu/${vmid}/config`, config);
+  } catch (e) {
+    // Fallback: just set cores and memory if cloud-init not supported
+    await req(node, 'PUT', `/nodes/${pveNode}/qemu/${vmid}/config`, { cores: cpus, memory: ram }).catch(() => {});
   }
 
   // Start VM
