@@ -152,7 +152,7 @@ export async function createKvmVm(node, { vmid, templateVmid, hostname, cpus, ra
       cores:    cpus,
       memory:   ram,
       ide3:     `${storage}:cloudinit`,
-      cipasswd: password,
+      cipassword: password,
       ipconfig0: ipConfig || 'ip=dhcp',
       nameserver: '8.8.8.8',
       searchdomain: 'localdomain',
