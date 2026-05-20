@@ -60,18 +60,20 @@ CREATE TABLE IF NOT EXISTS templates (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 CREATE TABLE IF NOT EXISTS ip_pools (
-  id         INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
-  name       VARCHAR(100) NOT NULL,
-  gateway    VARCHAR(45),
-  netmask    VARCHAR(45),
-  node_id    INT UNSIGNED,
-  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  id                INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  name              VARCHAR(100) NOT NULL,
+  gateway           VARCHAR(45),
+  netmask           VARCHAR(45),
+  node_id           INT UNSIGNED,
+  leaseweb_api_key  VARCHAR(255) DEFAULT NULL,
+  created_at        DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
   FOREIGN KEY (node_id) REFERENCES nodes(id) ON DELETE SET NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 CREATE TABLE IF NOT EXISTS ip_addresses (
   id          INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
   ip_address  VARCHAR(45) NOT NULL UNIQUE,
+  mac_address VARCHAR(17) DEFAULT NULL,
   pool_id     INT UNSIGNED,
   vps_id      INT UNSIGNED,
   is_ipv6     TINYINT(1) NOT NULL DEFAULT 0,

@@ -27,7 +27,7 @@ async function processJob(job) {
 
   await setTaskStatus(taskId, 'running');
 
-  const vps  = await queryOne('SELECT v.*, p.cpu, p.ram, p.disk, p.bandwidth, n.* FROM vps v JOIN plans p ON v.plan_id = p.id JOIN nodes n ON v.node_id = n.id WHERE v.id = ?', [vpsId]);
+  const vps  = await queryOne('SELECT v.*, p.cpu, p.ram, p.disk, p.bandwidth, n.*, v.type as type FROM vps v JOIN plans p ON v.plan_id = p.id JOIN nodes n ON v.node_id = n.id WHERE v.id = ?', [vpsId]);
   if (!vps) throw new Error(`VPS ${vpsId} not found`);
 
   const node = await getNode(vps.node_id);

@@ -42,14 +42,16 @@ curl -sk https://localhost:8006 | grep -o "Proxmox" | head -1
 
 Should return `Proxmox`. Confirm SSH still works before continuing.
 
-### Step 3 — Copy SSH-Enabled Templates from Existing Server
+### Step 3 — Download SSH-Enabled Templates from Panel Server
 
 ```bash
-rsync -avz root@EXISTING_PROXMOX_IP:/var/lib/vz/template/cache/*-ssh-enabled.tar.zst /var/lib/vz/template/cache/
-rsync -avz root@EXISTING_PROXMOX_IP:/var/lib/vz/template/cache/rescue-ubuntu.tar.zst /var/lib/vz/template/cache/
+PANEL=https://YOUR_PANEL_DOMAIN
+for f in ubuntu-22.04-ssh-enabled ubuntu-24.04-ssh-enabled debian-12-ssh-enabled debian-13-ssh-enabled almalinux-9-ssh-enabled almalinux-8-ssh-enabled rockylinux-9-ssh-enabled rescue-ubuntu; do
+  wget -q -P /var/lib/vz/template/cache/ $PANEL/templates/${f}.tar.zst && echo "✓ $f"
+done
 ```
 
-Replace `EXISTING_PROXMOX_IP` with `184.107.3.207`.
+Replace `YOUR_PANEL_DOMAIN` with your panel domain (e.g. `panel.yourdomain.com`).
 
 ### Step 4 — Enable Snippets and Copy Rescue Script
 
