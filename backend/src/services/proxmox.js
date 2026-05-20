@@ -163,9 +163,14 @@ export async function createKvmVm(node, { vmid, templateVmid, hostname, cpus, ra
     await req(node, 'PUT', `/nodes/${pveNode}/qemu/${vmid}/config`, { cores: cpus, memory: ram }).catch(() => {});
   }
 
-  // Start VM
+  // Start VM, wait for it to boot, then reboot so cloudbase-init picks up the config drive on second boot
   const startTask = await req(node, 'POST', `/nodes/${pveNode}/qemu/${vmid}/status/start`);
   await waitForTask(node, startTask);
+
+  // Wait 60s for first boot to complete, then reboot so cloudbase-init reads the drive on second boot
+  await new Promise(r => setTimeout(r, 60000));
+  const rebootTask = await req(node, 'POST', `/nodes/${pveNode}/qemu/${vmid}/status/reboot`).catch(() => null);
+  if (rebootTask) await waitForTask(node, rebootTask, 180000).catch(() => {});
 
   return vmid;
 }
