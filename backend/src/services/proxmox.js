@@ -77,6 +77,31 @@ export async function waitForTask(node, upid, timeoutMs = 120000) {
   throw new Error('Proxmox task timed out');
 }
 
+export async function waitForGuestAgent(node, vmid, timeoutMs = 300000) {
+  const pveNode = node.proxmox_node || 'pve';
+  const start = Date.now();
+  while (Date.now() - start < timeoutMs) {
+    try {
+      await req(node, 'GET', `/nodes/${pveNode}/qemu/${vmid}/agent/info`);
+      return true;
+    } catch {
+      await new Promise(r => setTimeout(r, 5000));
+    }
+  }
+  throw new Error('Guest agent timed out');
+}
+
+export async function runGuestExec(node, vmid, command) {
+  const pveNode = node.proxmox_node || 'pve';
+  const result = await req(node, 'POST', `/nodes/${pveNode}/qemu/${vmid}/agent/exec`, { command });
+  const pid = result.pid;
+  for (let i = 0; i < 30; i++) {
+    await new Promise(r => setTimeout(r, 2000));
+    const status = await req(node, 'GET', `/nodes/${pveNode}/qemu/${vmid}/agent/exec-status?pid=${pid}`);
+    if (status.exited) return status;
+  }
+}
+
 // ─── Node info ───────────────────────────────────────────────────────────────
 
 export async function testConnection(node) {

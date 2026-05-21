@@ -94,6 +94,16 @@ async function processJob(job) {
         }
       }
 
+      // For Windows KVM VMs, clear the PasswordExpired flag via guest agent
+      if (type === 'kvm') {
+        const tpl = await queryOne('SELECT * FROM templates WHERE id = ?', [vps.template_id]);
+        if (tpl?.os_family === 'windows') {
+          proxmox.waitForGuestAgent(node, vmid).then(() =>
+            proxmox.runGuestExec(node, vmid, ['powershell', '-c', '$u=[ADSI]"WinNT://./Administrator,user"; $u.PasswordExpired=0; $u.SetInfo()'])
+          ).catch(() => {});
+        }
+      }
+
       // Send welcome email
       const user = await queryOne('SELECT * FROM users WHERE id = ?', [vps.user_id]);
       if (user) {
