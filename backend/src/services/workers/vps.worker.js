@@ -94,12 +94,14 @@ async function processJob(job) {
         }
       }
 
-      // For Windows KVM VMs, clear the PasswordExpired flag via guest agent
+      // For Windows KVM VMs, wait for cloudbase-init to finish then clear PasswordExpired flag
       if (type === 'kvm') {
         const tpl = await queryOne('SELECT * FROM templates WHERE id = ?', [vps.template_id]);
         if (tpl?.os_family === 'windows') {
           proxmox.waitForGuestAgent(node, vmid).then(() =>
-            proxmox.runGuestExec(node, vmid, ['powershell', '-c', '$u=[ADSI]"WinNT://./Administrator,user"; $u.PasswordExpired=0; $u.SetInfo()'])
+            proxmox.runGuestExec(node, vmid, ['powershell', '-c',
+              '$s=Get-Service "cloudbase-init" -ErrorAction SilentlyContinue; if($s){while($s.Status -ne "Stopped"){Start-Sleep 5;$s.Refresh()}}; $u=[ADSI]"WinNT://./Administrator,user"; $u.PasswordExpired=0; $u.SetInfo()'
+            ])
           ).catch(() => {});
         }
       }
