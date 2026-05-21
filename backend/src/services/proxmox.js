@@ -93,12 +93,35 @@ export async function waitForGuestAgent(node, vmid, timeoutMs = 300000) {
 
 export async function runGuestExec(node, vmid, command) {
   const pveNode = node.proxmox_node || 'pve';
-  const result = await req(node, 'POST', `/nodes/${pveNode}/qemu/${vmid}/agent/exec`, { command });
-  const pid = result.pid;
-  for (let i = 0; i < 30; i++) {
-    await new Promise(r => setTimeout(r, 2000));
-    const status = await req(node, 'GET', `/nodes/${pveNode}/qemu/${vmid}/agent/exec-status?pid=${pid}`);
-    if (status.exited) return status;
+  const base = `https://${node.hostname}:${node.port || 8006}`;
+  const url = `${base}/api2/json/nodes/${pveNode}/qemu/${vmid}/agent/exec`;
+
+  // Proxmox requires array elements as repeated 'command' keys, not comma-joined
+  const params = new URLSearchParams();
+  const args = Array.isArray(command) ? command : [command];
+  args.forEach(a => params.append('command', a));
+
+  const response = await fetch(url, {
+    method: 'POST',
+    headers: {
+      Authorization: `PVEAPIToken=${node.api_token_id}=${node.api_token_secret}`,
+      'Content-Type': 'application/x-www-form-urlencoded',
+    },
+    body: params.toString(),
+    dispatcher: insecureAgent,
+  });
+  const text = await response.text();
+  if (!response.ok) throw new Error(`Guest exec failed: ${text}`);
+  const pid = JSON.parse(text)?.data?.pid;
+  if (!pid) return;
+
+  // Poll up to 10 minutes for the command to finish
+  for (let i = 0; i < 120; i++) {
+    await new Promise(r => setTimeout(r, 5000));
+    try {
+      const status = await req(node, 'GET', `/nodes/${pveNode}/qemu/${vmid}/agent/exec-status?pid=${pid}`);
+      if (status.exited) return status;
+    } catch {}
   }
 }
 
