@@ -71,17 +71,21 @@ function zenith_CreateAccount(array $params): string {
             ? $osTemplateMap[$selectedOs]
             : (int)($params['configoption2'] ?? 0);
 
-        $result = $api->provision([
+        $request = [
             'plan_id'         => (int)($params['configoption1'] ?? 0),
             'template_id'     => $templateId,
             'node_id'         => (int)($params['configoption3'] ?? 0) ?: null,
             'hostname'        => $hostname,
-            'root_password'   => $password,
+            'root_password'   => '***',
             'user_email'      => $params['clientsdetails']['email'],
             'whmcs_service_id'=> (string)$params['serviceid'],
-        ]);
+        ];
 
-        $uuid = $result['uuid'] ?? '';
+        $result = $api->provision(array_merge($request, ['root_password' => $password]));
+        $uuid   = $result['uuid'] ?? '';
+
+        logModuleCall('zenith', 'CreateAccount', $request, $result);
+        logActivity("Zenith: VPS created — hostname {$hostname}, UUID {$uuid}, OS: " . ($selectedOs ?: 'default'), $params['userid']);
 
         // Save UUID to custom field
         Capsule::table('tblcustomfieldsvalues')
@@ -103,6 +107,8 @@ function zenith_CreateAccount(array $params): string {
 
         return 'success';
     } catch (Exception $e) {
+        logModuleCall('zenith', 'CreateAccount', ['hostname' => $params['domain'] ?? ''], $e->getMessage());
+        logActivity("Zenith: VPS creation FAILED for client #{$params['userid']} — " . $e->getMessage(), $params['userid']);
         return 'Error: ' . $e->getMessage();
     }
 }
@@ -112,8 +118,14 @@ function zenith_SuspendAccount(array $params): string {
         $uuid = _zenith_getuuid($params);
         if (!$uuid) return 'Error: VPS UUID not found. Was the VPS created?';
         _zenith_api($params)->suspend($uuid);
+        logModuleCall('zenith', 'SuspendAccount', ['uuid' => $uuid], 'success');
+        logActivity("Zenith: VPS suspended — UUID {$uuid}", $params['userid']);
         return 'success';
-    } catch (Exception $e) { return 'Error: ' . $e->getMessage(); }
+    } catch (Exception $e) {
+        logModuleCall('zenith', 'SuspendAccount', ['uuid' => _zenith_getuuid($params)], $e->getMessage());
+        logActivity("Zenith: VPS suspend FAILED — " . $e->getMessage(), $params['userid']);
+        return 'Error: ' . $e->getMessage();
+    }
 }
 
 function zenith_UnsuspendAccount(array $params): string {
@@ -121,8 +133,14 @@ function zenith_UnsuspendAccount(array $params): string {
         $uuid = _zenith_getuuid($params);
         if (!$uuid) return 'Error: VPS UUID not found.';
         _zenith_api($params)->unsuspend($uuid);
+        logModuleCall('zenith', 'UnsuspendAccount', ['uuid' => $uuid], 'success');
+        logActivity("Zenith: VPS unsuspended — UUID {$uuid}", $params['userid']);
         return 'success';
-    } catch (Exception $e) { return 'Error: ' . $e->getMessage(); }
+    } catch (Exception $e) {
+        logModuleCall('zenith', 'UnsuspendAccount', ['uuid' => _zenith_getuuid($params)], $e->getMessage());
+        logActivity("Zenith: VPS unsuspend FAILED — " . $e->getMessage(), $params['userid']);
+        return 'Error: ' . $e->getMessage();
+    }
 }
 
 function zenith_TerminateAccount(array $params): string {
@@ -130,8 +148,14 @@ function zenith_TerminateAccount(array $params): string {
         $uuid = _zenith_getuuid($params);
         if (!$uuid) return 'success'; // already gone
         _zenith_api($params)->terminate($uuid);
+        logModuleCall('zenith', 'TerminateAccount', ['uuid' => $uuid], 'success');
+        logActivity("Zenith: VPS terminated — UUID {$uuid}", $params['userid']);
         return 'success';
-    } catch (Exception $e) { return 'Error: ' . $e->getMessage(); }
+    } catch (Exception $e) {
+        logModuleCall('zenith', 'TerminateAccount', ['uuid' => _zenith_getuuid($params)], $e->getMessage());
+        logActivity("Zenith: VPS termination FAILED — " . $e->getMessage(), $params['userid']);
+        return 'Error: ' . $e->getMessage();
+    }
 }
 
 function zenith_AdminServicesTabFields(array $params): array {
