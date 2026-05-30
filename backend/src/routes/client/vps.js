@@ -3,6 +3,7 @@ import { authenticate } from '../../middleware/authenticate.js';
 import { addVpsJob } from '../../services/queue.js';
 import { addBackupJob } from '../../services/queue.js';
 import * as proxmox from '../../services/proxmox.js';
+import { logWhmcsActivity } from '../../services/whmcs.js';
 
 async function getVpsForUser(vpsId, userId, role) {
   const q = role === 'admin'
@@ -61,6 +62,7 @@ export default async function clientVpsRoutes(fastify) {
       if (vps.status === 'suspended') return reply.status(422).send({ success: false, error: 'VPS is suspended' });
       const task = await query('INSERT INTO tasks (vps_id, user_id, type, status) VALUES (?, ?, ?, "pending")', [vps.id, req.user.id, `${action}_vps`]);
       await addVpsJob(`${action}_vps`, { vpsId: vps.id, taskId: task.insertId });
+      logWhmcsActivity(`Zenith: Client ${req.user.email} issued ${action} on VPS ${vps.hostname} (ID: ${vps.id})`);
       return reply.status(202).send({ success: true, message: `${action} queued` });
     });
   }
@@ -72,6 +74,8 @@ export default async function clientVpsRoutes(fastify) {
     if (!root_password) return reply.status(400).send({ success: false, error: 'root_password required' });
     const task = await query('INSERT INTO tasks (vps_id, user_id, type, status) VALUES (?, ?, "reinstall_vps", "pending")', [vps.id, req.user.id]);
     await addVpsJob('reinstall_vps', { vpsId: vps.id, taskId: task.insertId, root_password, template_id: template_id || null });
+    const tplName = template_id ? (await queryOne('SELECT name FROM templates WHERE id = ?', [template_id]))?.name : vps.template_name;
+    logWhmcsActivity(`Zenith: Client ${req.user.email} reinstalled VPS ${vps.hostname} (ID: ${vps.id}) with template: ${tplName || 'same'}`);
     return reply.status(202).send({ success: true, message: 'Reinstall queued' });
   });
 
@@ -238,6 +242,7 @@ export default async function clientVpsRoutes(fastify) {
         body: JSON.stringify({ reverseLookup: ptr }),
       });
       if (!res.ok) return reply.status(422).send({ success: false, error: `Leaseweb API error: HTTP ${res.status}` });
+      logWhmcsActivity(`Zenith: Client ${req.user.email} updated rDNS for ${ip} on VPS ${vps.hostname} (ID: ${vps.id}) → ${ptr}`);
       return reply.send({ success: true });
     } catch (err) { return reply.status(422).send({ success: false, error: err.message }); }
   });
