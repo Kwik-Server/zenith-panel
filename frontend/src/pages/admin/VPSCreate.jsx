@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { adminAPI } from '../../api/client';
 import toast from 'react-hot-toast';
@@ -7,7 +7,8 @@ export default function VPSCreate() {
   const [step, setStep] = useState(1);
   const [plans, setPlans] = useState([]);
   const [templates, setTemplates] = useState([]);
-  const [nodes, setNodes] = useState([]);
+  const [nodeAvailability, setNodeAvailability] = useState([]);
+  const [selectedLocation, setSelectedLocation] = useState('');
   const [users, setUsers] = useState([]);
   const [form, setForm] = useState({ plan_id: '', template_id: '', node_id: '', user_id: '', hostname: '', root_password: '', ip_address_ids: [] });
   const [loading, setLoading] = useState(false);
@@ -15,12 +16,25 @@ export default function VPSCreate() {
   const [showNewUser, setShowNewUser] = useState(false);
   const [newUser, setNewUser] = useState({ email: '', password: '', first_name: '', last_name: '' });
   const [creatingUser, setCreatingUser] = useState(false);
+  const [userSearch, setUserSearch] = useState('');
+  const [showUserDropdown, setShowUserDropdown] = useState(false);
+  const userDropdownRef = useRef(null);
   const navigate = useNavigate();
 
   useEffect(() => {
-    Promise.all([adminAPI.getPlans(), adminAPI.getTemplates(), adminAPI.getNodes(), adminAPI.getUsers()])
+    const handleClickOutside = (e) => {
+      if (userDropdownRef.current && !userDropdownRef.current.contains(e.target)) {
+        setShowUserDropdown(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
+
+  useEffect(() => {
+    Promise.all([adminAPI.getPlans(), adminAPI.getTemplates(), adminAPI.getNodeAvailability(), adminAPI.getUsers()])
       .then(([p, t, n, u]) => {
-        setPlans(p.data.data); setTemplates(t.data.data); setNodes(n.data.data); setUsers(u.data.data);
+        setPlans(p.data.data); setTemplates(t.data.data); setNodeAvailability(n.data.data); setUsers(u.data.data);
       });
   }, []);
 
@@ -71,6 +85,29 @@ export default function VPSCreate() {
 
   const selectedPlan = plans.find(p => p.id == form.plan_id);
   const selectedTpl  = templates.find(t => t.id == form.template_id);
+
+  const locations = [...new Set(nodeAvailability.map(n => n.location).filter(Boolean))].sort();
+
+  const eligibleNodes = nodeAvailability
+    .filter(n => {
+      if (n.location !== selectedLocation) return false;
+      if (n.free_ip_count < 1) return false;
+      if (selectedPlan) {
+        if (n.total_ram  > 0 && n.available_ram  < selectedPlan.ram)  return false;
+        if (n.total_disk > 0 && n.available_disk < selectedPlan.disk) return false;
+      }
+      return true;
+    })
+    .sort((a, b) => b.available_ram - a.available_ram);
+
+  // Auto-select when exactly one eligible node exists
+  useEffect(() => {
+    if (eligibleNodes.length === 1) {
+      update('node_id', eligibleNodes[0].id);
+    } else if (selectedLocation) {
+      update('node_id', '');
+    }
+  }, [eligibleNodes.map(n => n.id).join(','), selectedLocation]);
 
   return (
     <div className="p-8 max-w-2xl">
@@ -142,12 +179,77 @@ export default function VPSCreate() {
               </div>
             ))}
             <div>
-              <label className="block text-sm font-medium text-slate-700 mb-1">Node</label>
-              <select value={form.node_id} onChange={e => update('node_id', e.target.value)} className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500 outline-none">
-                <option value="">Select node…</option>
-                {nodes.filter(n => n.is_active).map(n => <option key={n.id} value={n.id}>{n.name} ({n.location})</option>)}
-              </select>
+              <label className="block text-sm font-medium text-slate-700 mb-2">Location</label>
+              {locations.length === 0 && <p className="text-sm text-slate-400">No active nodes found.</p>}
+              <div className="grid grid-cols-2 gap-2">
+                {locations.map(loc => (
+                  <button
+                    key={loc}
+                    type="button"
+                    onClick={() => {
+                      setSelectedLocation(loc);
+                      update('node_id', '');
+                      setAvailableIps([]);
+                    }}
+                    className={`px-4 py-2.5 rounded-lg border-2 text-sm font-medium transition-colors text-left ${
+                      selectedLocation === loc
+                        ? 'border-indigo-500 bg-indigo-50 text-indigo-700'
+                        : 'border-slate-200 text-slate-600 hover:border-slate-300'
+                    }`}
+                  >
+                    {loc}
+                  </button>
+                ))}
+              </div>
             </div>
+
+            {selectedLocation && (
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-2">Node</label>
+                {eligibleNodes.length === 0 && (
+                  <p className="text-sm text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
+                    No nodes in {selectedLocation} have enough resources + free IPs for this plan.
+                  </p>
+                )}
+                {eligibleNodes.length === 1 && (
+                  <div className="flex items-center justify-between p-3 border-2 rounded-xl border-indigo-500 bg-indigo-50">
+                    <div>
+                      <p className="font-medium text-slate-900">{eligibleNodes[0].name}</p>
+                      <p className="text-xs text-slate-500">
+                        {eligibleNodes[0].free_ip_count} free IP{eligibleNodes[0].free_ip_count !== 1 ? 's' : ''}
+                        {eligibleNodes[0].total_ram  > 0 && ` · ${eligibleNodes[0].available_ram >= 1024 ? `${Math.floor(eligibleNodes[0].available_ram / 1024)}GB` : `${eligibleNodes[0].available_ram}MB`} RAM free`}
+                        {eligibleNodes[0].total_disk > 0 && ` · ${eligibleNodes[0].available_disk}GB disk free`}
+                        {(eligibleNodes[0].total_ram === 0 || eligibleNodes[0].total_disk === 0) && <span className="ml-1 text-amber-500">(capacity not configured)</span>}
+                      </p>
+                    </div>
+                    <span className="text-xs bg-indigo-100 text-indigo-700 px-2 py-0.5 rounded-full font-medium">Auto-selected</span>
+                  </div>
+                )}
+                {eligibleNodes.length > 1 && (
+                  <div className="space-y-2">
+                    {eligibleNodes.map((n, idx) => (
+                      <label key={n.id} className={`flex items-center justify-between p-3 border-2 rounded-xl cursor-pointer transition-colors ${
+                        form.node_id == n.id ? 'border-indigo-500 bg-indigo-50' : 'border-slate-200 hover:border-slate-300'
+                      }`}>
+                        <input type="radio" name="node" value={n.id} checked={form.node_id == n.id} onChange={() => update('node_id', n.id)} className="sr-only" />
+                        <div>
+                          <p className="font-medium text-slate-900">{n.name}</p>
+                          <p className="text-xs text-slate-500">
+                            {n.free_ip_count} free IP{n.free_ip_count !== 1 ? 's' : ''}
+                            {n.total_ram  > 0 && ` · ${n.available_ram >= 1024 ? `${Math.floor(n.available_ram / 1024)}GB` : `${n.available_ram}MB`} RAM free`}
+                            {n.total_disk > 0 && ` · ${n.available_disk}GB disk free`}
+                            {(n.total_ram === 0 || n.total_disk === 0) && <span className="ml-1 text-amber-500">(capacity not configured)</span>}
+                          </p>
+                        </div>
+                        {idx === 0 && (
+                          <span className="text-xs bg-green-100 text-green-700 px-2 py-0.5 rounded-full font-medium">Most free</span>
+                        )}
+                      </label>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
             <div>
               <div className="flex items-center justify-between mb-1">
                 <label className="block text-sm font-medium text-slate-700">Assign to User</label>
@@ -156,10 +258,62 @@ export default function VPSCreate() {
                 </button>
               </div>
               {!showNewUser ? (
-                <select value={form.user_id} onChange={e => update('user_id', e.target.value)} className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500 outline-none">
-                  <option value="">Select user…</option>
-                  {users.map(u => <option key={u.id} value={u.id}>{u.email}</option>)}
-                </select>
+                <div className="relative" ref={userDropdownRef}>
+                  <button
+                    type="button"
+                    onClick={() => setShowUserDropdown(v => !v)}
+                    className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm text-left flex items-center justify-between focus:ring-2 focus:ring-indigo-500 outline-none bg-white"
+                  >
+                    <span className={form.user_id ? 'text-slate-900' : 'text-slate-400'}>
+                      {form.user_id
+                        ? (() => { const u = users.find(u => u.id == form.user_id); return u ? `${[u.first_name, u.last_name].filter(Boolean).join(' ') || u.email} (${u.email})` : 'Select user…'; })()
+                        : 'Select user…'}
+                    </span>
+                    <svg className="w-4 h-4 text-slate-400" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" /></svg>
+                  </button>
+                  {showUserDropdown && (
+                    <div className="absolute z-20 mt-1 w-full bg-white border border-slate-200 rounded-lg shadow-lg">
+                      <div className="p-2 border-b border-slate-100">
+                        <input
+                          autoFocus
+                          type="text"
+                          value={userSearch}
+                          onChange={e => setUserSearch(e.target.value)}
+                          placeholder="Search by name or email…"
+                          className="w-full px-3 py-1.5 border border-slate-200 rounded-md text-sm focus:ring-2 focus:ring-indigo-500 outline-none"
+                        />
+                      </div>
+                      <ul className="max-h-48 overflow-y-auto py-1">
+                        {users
+                          .filter(u => {
+                            const q = userSearch.toLowerCase();
+                            const name = [u.first_name, u.last_name].filter(Boolean).join(' ').toLowerCase();
+                            return name.includes(q) || u.email.toLowerCase().includes(q);
+                          })
+                          .map(u => {
+                            const name = [u.first_name, u.last_name].filter(Boolean).join(' ');
+                            return (
+                              <li
+                                key={u.id}
+                                onClick={() => { update('user_id', u.id); setShowUserDropdown(false); setUserSearch(''); }}
+                                className={`px-3 py-2 text-sm cursor-pointer hover:bg-indigo-50 flex flex-col ${form.user_id == u.id ? 'bg-indigo-50 text-indigo-700' : 'text-slate-800'}`}
+                              >
+                                <span className="font-medium">{name || u.email}</span>
+                                {name && <span className="text-xs text-slate-400">{u.email}</span>}
+                              </li>
+                            );
+                          })}
+                        {users.filter(u => {
+                          const q = userSearch.toLowerCase();
+                          const name = [u.first_name, u.last_name].filter(Boolean).join(' ').toLowerCase();
+                          return name.includes(q) || u.email.toLowerCase().includes(q);
+                        }).length === 0 && (
+                          <li className="px-3 py-2 text-sm text-slate-400">No users found</li>
+                        )}
+                      </ul>
+                    </div>
+                  )}
+                </div>
               ) : (
                 <div className="border border-slate-200 rounded-lg p-4 space-y-3 bg-slate-50">
                   <div className="grid grid-cols-2 gap-3">
@@ -226,8 +380,8 @@ export default function VPSCreate() {
                 ['Plan', selectedPlan?.name],
                 ['Template', selectedTpl?.name],
                 ['Hostname', form.hostname],
-                ['Node', nodes.find(n => n.id == form.node_id)?.name],
-                ['User', users.find(u => u.id == form.user_id)?.email],
+                ['Node', nodeAvailability.find(n => n.id == form.node_id)?.name],
+                ['User', (() => { const u = users.find(u => u.id == form.user_id); if (!u) return '—'; const name = [u.first_name, u.last_name].filter(Boolean).join(' '); return name ? `${name} (${u.email})` : u.email; })()],
                 ['IPs', form.ip_address_ids.length > 0
                   ? availableIps.filter(i => form.ip_address_ids.includes(i.id)).map(i => i.ip_address).join(', ')
                   : 'Auto-assign'],

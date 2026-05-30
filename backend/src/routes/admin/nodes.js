@@ -24,6 +24,31 @@ export default async function nodeRoutes(fastify) {
     return reply.status(201).send({ success: true, data: { id: result.insertId } });
   });
 
+  // Enriched node list for VPS creation: free IPs + allocated resources per node
+  fastify.get('/availability', async (req, reply) => {
+    const nodes = await query(
+      `SELECT
+         n.id, n.name, n.location, n.type, n.total_ram, n.total_disk, n.total_cpu,
+         (SELECT COUNT(*) FROM ip_pools ip JOIN ip_addresses ia ON ia.pool_id = ip.id
+          WHERE ip.node_id = n.id AND ia.vps_id IS NULL) AS free_ip_count,
+         (SELECT COALESCE(SUM(pl.ram),  0) FROM vps v JOIN plans pl ON pl.id = v.plan_id
+          WHERE v.node_id = n.id AND v.status NOT IN ('deleted','error')) AS allocated_ram,
+         (SELECT COALESCE(SUM(pl.disk), 0) FROM vps v JOIN plans pl ON pl.id = v.plan_id
+          WHERE v.node_id = n.id AND v.status NOT IN ('deleted','error')) AS allocated_disk
+       FROM nodes n
+       WHERE n.is_active = 1
+       ORDER BY n.location, n.name`
+    );
+    return reply.send({
+      success: true,
+      data: nodes.map(n => ({
+        ...n,
+        available_ram:  n.total_ram  - n.allocated_ram,
+        available_disk: n.total_disk - n.allocated_disk,
+      })),
+    });
+  });
+
   fastify.get('/:id', async (req, reply) => {
     const node = await queryOne('SELECT id, name, hostname, port, proxmox_node, storage, backup_storage, type, location, total_cpu, total_ram, total_disk, is_active, created_at FROM nodes WHERE id = ?', [req.params.id]);
     if (!node) return reply.status(404).send({ success: false, error: 'Node not found' });

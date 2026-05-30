@@ -134,6 +134,34 @@ function zenith_TerminateAccount(array $params): string {
     } catch (Exception $e) { return 'Error: ' . $e->getMessage(); }
 }
 
+function zenith_AdminServicesTabFields(array $params): array {
+    $uuid = _zenith_getuuid($params);
+    if (!$uuid) {
+        return ['Zenith Status' => 'VPS not yet provisioned'];
+    }
+    try {
+        $data   = _zenith_api($params)->getStatus($uuid);
+        $ip     = $data['ip_address'] ?? '';
+        $status = ucfirst($data['status'] ?? 'unknown');
+
+        // Sync assigned IP into WHMCS dedicated IP field
+        if ($ip && function_exists('localAPI')) {
+            localAPI('UpdateClientProduct', [
+                'serviceid'   => $params['serviceid'],
+                'dedicatedip' => $ip,
+            ]);
+        }
+
+        return [
+            'VPS Status'  => $status,
+            'Assigned IP' => $ip ?: 'Not yet assigned (provisioning in progress)',
+            'UUID'        => $uuid,
+        ];
+    } catch (Exception $e) {
+        return ['Zenith Error' => $e->getMessage()];
+    }
+}
+
 function zenith_TestConnection(array $params): array {
     try {
         $ok = _zenith_api($params)->testConnection();

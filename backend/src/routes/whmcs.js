@@ -37,13 +37,47 @@ export default async function whmcsRoutes(fastify) {
       user = { id: r.insertId, email: user_email };
     }
 
-    // Pick node (specified or least loaded)
-    let targetNodeId = node_id;
-    if (!targetNodeId) {
-      const n = await queryOne('SELECT id FROM nodes WHERE is_active = 1 ORDER BY (SELECT COUNT(*) FROM vps WHERE node_id = nodes.id) ASC LIMIT 1');
-      targetNodeId = n?.id;
+    const plan = await queryOne('SELECT * FROM plans WHERE id = ?', [plan_id]);
+    if (!plan) return reply.status(400).send({ success: false, error: 'Plan not found' });
+
+    const pickBestNode = async () => {
+      const candidates = await query(
+        `SELECT
+           n.id, n.total_ram, n.total_disk,
+           (SELECT COUNT(*) FROM ip_pools ip JOIN ip_addresses ia ON ia.pool_id = ip.id
+            WHERE ip.node_id = n.id AND ia.vps_id IS NULL) AS free_ip_count,
+           (SELECT COALESCE(SUM(pl.ram),  0) FROM vps v JOIN plans pl ON pl.id = v.plan_id
+            WHERE v.node_id = n.id AND v.status NOT IN ('deleted','error')) AS allocated_ram,
+           (SELECT COALESCE(SUM(pl.disk), 0) FROM vps v JOIN plans pl ON pl.id = v.plan_id
+            WHERE v.node_id = n.id AND v.status NOT IN ('deleted','error')) AS allocated_disk
+         FROM nodes n WHERE n.is_active = 1`
+      );
+      const eligible = candidates
+        .filter(n => {
+          if (n.free_ip_count < 1) return false;
+          const availRam  = n.total_ram  - n.allocated_ram;
+          const availDisk = n.total_disk - n.allocated_disk;
+          if (n.total_ram  > 0 && availRam  < plan.ram)  return false;
+          if (n.total_disk > 0 && availDisk < plan.disk) return false;
+          return true;
+        })
+        .sort((a, b) => (b.total_ram - b.allocated_ram) - (a.total_ram - a.allocated_ram));
+      return eligible[0]?.id || null;
+    };
+
+    // Use specified node only if it actually has a free IP; otherwise auto-select
+    let targetNodeId = null;
+    if (node_id) {
+      const hasIp = await queryOne(
+        `SELECT 1 FROM ip_addresses a JOIN ip_pools p ON a.pool_id = p.id
+         WHERE a.vps_id IS NULL AND p.node_id = ? LIMIT 1`,
+        [node_id]
+      );
+      targetNodeId = hasIp ? node_id : await pickBestNode();
+    } else {
+      targetNodeId = await pickBestNode();
     }
-    if (!targetNodeId) return reply.status(422).send({ success: false, error: 'No active nodes available' });
+    if (!targetNodeId) return reply.status(422).send({ success: false, error: 'No suitable node available (check free IPs and resources)' });
 
     const tpl = await queryOne('SELECT * FROM templates WHERE id = ? AND is_active = 1', [template_id]);
     if (!tpl) return reply.status(400).send({ success: false, error: 'Template not found' });

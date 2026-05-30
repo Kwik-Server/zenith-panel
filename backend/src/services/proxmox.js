@@ -67,7 +67,7 @@ export async function waitForTask(node, upid, timeoutMs = 120000) {
   while (Date.now() - start < timeoutMs) {
     const status = await req(node, 'GET', `/nodes/${pveNode}/tasks/${encodedUpid}/status`);
     if (status.status === 'stopped') {
-      if (status.exitstatus !== 'OK') {
+      if (status.exitstatus !== 'OK' && !status.exitstatus?.startsWith('WARNINGS:')) {
         throw new Error(`Proxmox task failed: ${status.exitstatus}`);
       }
       return status;

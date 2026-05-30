@@ -44,7 +44,8 @@ export const adminAPI = {
   dashboard: () => api.get('/admin/dashboard'),
 
   // Nodes
-  getNodes:    ()     => api.get('/admin/nodes'),
+  getNodes:            ()     => api.get('/admin/nodes'),
+  getNodeAvailability: ()     => api.get('/admin/nodes/availability'),
   createNode:  (d)    => api.post('/admin/nodes', d),
   getNode:     (id)   => api.get(`/admin/nodes/${id}`),
   updateNode:  (id,d) => api.put(`/admin/nodes/${id}`, d),

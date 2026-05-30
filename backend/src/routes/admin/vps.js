@@ -60,6 +60,9 @@ export default async function vpsRoutes(fastify) {
         'SELECT a.*, p.netmask, p.gateway FROM ip_addresses a JOIN ip_pools p ON a.pool_id = p.id WHERE a.vps_id IS NULL AND p.node_id = ? LIMIT 1',
         [node_id]
       );
+      if (!primaryIp) {
+        return reply.status(422).send({ success: false, error: 'No free IPs available on this node. Add IPs to the pool or select a different node.' });
+      }
     }
 
     const cidr = primaryIp?.netmask ? netmaskToCidr(primaryIp.netmask) : 24;
