@@ -107,6 +107,7 @@ export const adminAPI = {
   saveSettings:(d) => api.put('/admin/settings', d),
   getWhmcsKey: ()  => api.get('/admin/settings/whmcs-key'),
   testSmtp:    (d) => api.post('/admin/settings/test-smtp', d),
+  testWhmcs:   ()  => api.post('/admin/settings/test-whmcs'),
 };
 
 // Client

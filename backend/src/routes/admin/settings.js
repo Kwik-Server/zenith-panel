@@ -1,6 +1,7 @@
 import { query, queryOne } from '../../config/database.js';
 import { adminOnly } from '../../middleware/authenticate.js';
 import { testSmtp } from '../../services/email.js';
+import { testWhmcsConnection } from '../../services/whmcs.js';
 
 export default async function settingsRoutes(fastify) {
   fastify.addHook('preHandler', adminOnly);
@@ -30,6 +31,15 @@ export default async function settingsRoutes(fastify) {
     try {
       await testSmtp(req.body || {});
       return reply.send({ success: true, message: 'SMTP connection successful' });
+    } catch (err) {
+      return reply.status(422).send({ success: false, error: err.message });
+    }
+  });
+
+  fastify.post('/test-whmcs', async (req, reply) => {
+    try {
+      await testWhmcsConnection();
+      return reply.send({ success: true, message: 'WHMCS API connection successful' });
     } catch (err) {
       return reply.status(422).send({ success: false, error: err.message });
     }
