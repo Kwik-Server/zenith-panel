@@ -50,7 +50,8 @@ export async function testWhmcsConnection() {
   const body = new URLSearchParams({
     identifier:   whmcs_identifier,
     secret:       whmcs_secret,
-    action:       'WhmcsDetails',
+    action:       'LogActivity',
+    description:  'Zenith Panel: API connection test',
     responsetype: 'json',
   });
   const { fetch } = await import('undici');
