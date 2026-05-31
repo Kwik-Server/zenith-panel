@@ -21,8 +21,9 @@ function zenith_ConfigOptions(): array {
         'Node ID'             => ['Type' => 'text', 'Size' => 10, 'Description' => 'Leave blank for auto-select'],
         'Ubuntu Template ID'  => ['Type' => 'text', 'Size' => 10, 'Description' => 'Template ID for Ubuntu'],
         'Debian Template ID'  => ['Type' => 'text', 'Size' => 10, 'Description' => 'Template ID for Debian'],
-        'AlmaLinux 9 Template ID' => ['Type' => 'text', 'Size' => 10, 'Description' => 'Template ID for AlmaLinux 9'],
-        'AlmaLinux 8 Template ID' => ['Type' => 'text', 'Size' => 10, 'Description' => 'Template ID for AlmaLinux 8'],
+        'AlmaLinux 9 Template ID'     => ['Type' => 'text', 'Size' => 10, 'Description' => 'Template ID for AlmaLinux 9'],
+        'AlmaLinux 8 Template ID'     => ['Type' => 'text', 'Size' => 10, 'Description' => 'Template ID for AlmaLinux 8'],
+        'CentOS Stream 9 Template ID' => ['Type' => 'text', 'Size' => 10, 'Description' => 'Template ID for CentOS Stream 9'],
     ];
 }
 
@@ -61,10 +62,11 @@ function zenith_CreateAccount(array $params): string {
 
         // Map selected OS to template ID (configoption4-7 per OS)
         $osTemplateMap = [
-            'Ubuntu 22.04' => (int)($params['configoption4'] ?? 0),
-            'Debian 12'    => (int)($params['configoption5'] ?? 0),
-            'AlmaLinux 9'  => (int)($params['configoption6'] ?? 0),
-            'AlmaLinux 8'  => (int)($params['configoption7'] ?? 0),
+            'Ubuntu 22.04'    => (int)($params['configoption4'] ?? 0),
+            'Debian 12'       => (int)($params['configoption5'] ?? 0),
+            'AlmaLinux 9'     => (int)($params['configoption6'] ?? 0),
+            'AlmaLinux 8'     => (int)($params['configoption7'] ?? 0),
+            'CentOS Stream 9' => (int)($params['configoption8'] ?? 0),
         ];
         $selectedOs = $params['customfields']['Operating System'] ?? '';
         $templateId = ($selectedOs && isset($osTemplateMap[$selectedOs]) && $osTemplateMap[$selectedOs])
