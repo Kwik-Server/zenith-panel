@@ -16,14 +16,18 @@ function zenith_MetaData(): array {
 
 function zenith_ConfigOptions(): array {
     return [
-        'Plan ID'             => ['Type' => 'text', 'Size' => 10, 'Description' => 'Zenith Plan ID (number)'],
-        'Default Template ID' => ['Type' => 'text', 'Size' => 10, 'Description' => 'Fallback template if no OS selected'],
-        'Node ID'             => ['Type' => 'text', 'Size' => 10, 'Description' => 'Leave blank for auto-select'],
-        'Ubuntu Template ID'  => ['Type' => 'text', 'Size' => 10, 'Description' => 'Template ID for Ubuntu'],
-        'Debian Template ID'  => ['Type' => 'text', 'Size' => 10, 'Description' => 'Template ID for Debian'],
-        'AlmaLinux 9 Template ID'     => ['Type' => 'text', 'Size' => 10, 'Description' => 'Template ID for AlmaLinux 9'],
-        'AlmaLinux 8 Template ID'     => ['Type' => 'text', 'Size' => 10, 'Description' => 'Template ID for AlmaLinux 8'],
-        'CentOS Stream 9 Template ID' => ['Type' => 'text', 'Size' => 10, 'Description' => 'Template ID for CentOS Stream 9'],
+        'Plan ID'                       => ['Type' => 'text', 'Size' => 10, 'Description' => 'Zenith Plan ID (number)'],
+        'Default Template ID'           => ['Type' => 'text', 'Size' => 10, 'Description' => 'Fallback template if no OS selected'],
+        'Node ID'                       => ['Type' => 'text', 'Size' => 10, 'Description' => 'Leave blank for auto-select'],
+        'Ubuntu 22.04 Template ID'      => ['Type' => 'text', 'Size' => 10, 'Description' => 'Template ID for Ubuntu 22.04'],
+        'Debian 12 Template ID'         => ['Type' => 'text', 'Size' => 10, 'Description' => 'Template ID for Debian 12'],
+        'AlmaLinux 9 Template ID'       => ['Type' => 'text', 'Size' => 10, 'Description' => 'Template ID for AlmaLinux 9'],
+        'AlmaLinux 8 Template ID'       => ['Type' => 'text', 'Size' => 10, 'Description' => 'Template ID for AlmaLinux 8'],
+        'CentOS 9 Stream Template ID'   => ['Type' => 'text', 'Size' => 10, 'Description' => 'Template ID for CentOS 9 Stream'],
+        'Rocky Linux 9 Template ID'     => ['Type' => 'text', 'Size' => 10, 'Description' => 'Template ID for Rocky Linux 9'],
+        'Ubuntu 24.04 Template ID'      => ['Type' => 'text', 'Size' => 10, 'Description' => 'Template ID for Ubuntu 24.04'],
+        'Debian 13 Template ID'         => ['Type' => 'text', 'Size' => 10, 'Description' => 'Template ID for Debian 13'],
+        'Windows Server 2019 Template ID' => ['Type' => 'text', 'Size' => 10, 'Description' => 'Template ID for Windows Server 2019'],
     ];
 }
 
@@ -60,13 +64,17 @@ function zenith_CreateAccount(array $params): string {
             ?: strtolower(preg_replace('/[^a-z0-9\-]/', '', $params['username'])) . '.vps.local';
         $password = $params['password'] ?: bin2hex(random_bytes(8));
 
-        // Map selected OS to template ID (configoption4-7 per OS)
+        // Map selected OS to template ID
         $osTemplateMap = [
-            'Ubuntu 22.04'    => (int)($params['configoption4'] ?? 0),
-            'Debian 12'       => (int)($params['configoption5'] ?? 0),
-            'AlmaLinux 9'     => (int)($params['configoption6'] ?? 0),
-            'AlmaLinux 8'     => (int)($params['configoption7'] ?? 0),
-            'CentOS Stream 9' => (int)($params['configoption8'] ?? 0),
+            'Ubuntu 22.04'         => (int)($params['configoption4']  ?? 0),
+            'Debian 12'            => (int)($params['configoption5']  ?? 0),
+            'AlmaLinux 9'          => (int)($params['configoption6']  ?? 0),
+            'AlmaLinux 8'          => (int)($params['configoption7']  ?? 0),
+            'CentOS 9 Stream'      => (int)($params['configoption8']  ?? 0),
+            'Rocky Linux 9'        => (int)($params['configoption9']  ?? 0),
+            'Ubuntu 24.04'         => (int)($params['configoption10'] ?? 0),
+            'Debian 13'            => (int)($params['configoption11'] ?? 0),
+            'Windows Server 2019'  => (int)($params['configoption12'] ?? 0),
         ];
         $selectedOs = $params['customfields']['Operating System'] ?? '';
         $templateId = ($selectedOs && isset($osTemplateMap[$selectedOs]) && $osTemplateMap[$selectedOs])
