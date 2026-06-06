@@ -13,6 +13,22 @@ class ZenithAPI {
         return $this->request('POST', '/whmcs/provision', $data);
     }
 
+    public function start(string $uuid): array {
+        return $this->request('POST', "/whmcs/{$uuid}/start");
+    }
+
+    public function stop(string $uuid): array {
+        return $this->request('POST', "/whmcs/{$uuid}/stop");
+    }
+
+    public function restart(string $uuid): array {
+        return $this->request('POST', "/whmcs/{$uuid}/restart");
+    }
+
+    public function reinstall(string $uuid, string $password): array {
+        return $this->request('POST', "/whmcs/{$uuid}/reinstall", ['root_password' => $password]);
+    }
+
     public function suspend(string $uuid): array {
         return $this->request('POST', "/whmcs/{$uuid}/suspend");
     }

@@ -110,6 +110,44 @@ export default async function whmcsRoutes(fastify) {
     return reply.status(202).send({ success: true, message: 'VPS creation queued', data: { uuid, vps_id: vpsId, hostname, root_password } });
   });
 
+  fastify.post('/:uuid/start', async (req, reply) => {
+    const vps = await queryOne('SELECT * FROM vps WHERE uuid = ?', [req.params.uuid]);
+    if (!vps) return reply.status(404).send({ success: false, error: 'VPS not found' });
+    if (vps.status === 'suspended') return reply.status(422).send({ success: false, error: 'VPS is suspended — unsuspend it first' });
+    const task = await query('INSERT INTO tasks (vps_id, type, status) VALUES (?, "start_vps", "pending")', [vps.id]);
+    await addVpsJob('start_vps', { vpsId: vps.id, taskId: task.insertId });
+    return reply.status(202).send({ success: true, message: 'Start queued' });
+  });
+
+  fastify.post('/:uuid/stop', async (req, reply) => {
+    const vps = await queryOne('SELECT * FROM vps WHERE uuid = ?', [req.params.uuid]);
+    if (!vps) return reply.status(404).send({ success: false, error: 'VPS not found' });
+    if (vps.status === 'suspended') return reply.status(422).send({ success: false, error: 'VPS is suspended' });
+    const task = await query('INSERT INTO tasks (vps_id, type, status) VALUES (?, "stop_vps", "pending")', [vps.id]);
+    await addVpsJob('stop_vps', { vpsId: vps.id, taskId: task.insertId });
+    return reply.status(202).send({ success: true, message: 'Stop queued' });
+  });
+
+  fastify.post('/:uuid/restart', async (req, reply) => {
+    const vps = await queryOne('SELECT * FROM vps WHERE uuid = ?', [req.params.uuid]);
+    if (!vps) return reply.status(404).send({ success: false, error: 'VPS not found' });
+    if (vps.status === 'suspended') return reply.status(422).send({ success: false, error: 'VPS is suspended' });
+    const task = await query('INSERT INTO tasks (vps_id, type, status) VALUES (?, "restart_vps", "pending")', [vps.id]);
+    await addVpsJob('restart_vps', { vpsId: vps.id, taskId: task.insertId });
+    return reply.status(202).send({ success: true, message: 'Restart queued' });
+  });
+
+  fastify.post('/:uuid/reinstall', async (req, reply) => {
+    const { root_password } = req.body || {};
+    if (!root_password) return reply.status(400).send({ success: false, error: 'root_password required' });
+    const vps = await queryOne('SELECT * FROM vps WHERE uuid = ?', [req.params.uuid]);
+    if (!vps) return reply.status(404).send({ success: false, error: 'VPS not found' });
+    if (!vps.template_id) return reply.status(422).send({ success: false, error: 'No template set on this VPS — cannot reinstall' });
+    const task = await query('INSERT INTO tasks (vps_id, type, status) VALUES (?, "reinstall_vps", "pending")', [vps.id]);
+    await addVpsJob('reinstall_vps', { vpsId: vps.id, taskId: task.insertId, root_password });
+    return reply.status(202).send({ success: true, message: 'Reinstall queued' });
+  });
+
   fastify.post('/:uuid/suspend', async (req, reply) => {
     const vps = await queryOne('SELECT * FROM vps WHERE uuid = ?', [req.params.uuid]);
     if (!vps) return reply.status(404).send({ success: false, error: 'VPS not found' });

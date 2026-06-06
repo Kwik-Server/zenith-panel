@@ -285,7 +285,7 @@ function _zenith_rdns_fetch(array $params, string $uuid): array {
     }
 }
 
-function _zenith_clientarea_render(array $params, string $rdnsMessage = '', string $rdnsError = ''): array {
+function _zenith_clientarea_render(array $params, string $actionMessage = '', string $actionError = ''): array {
     $scheme   = !empty($params['serversecure']) ? 'https' : 'http';
     $panelUrl = "{$scheme}://{$params['serverhostname']}";
     $uuid     = _zenith_getuuid($params);
@@ -354,45 +354,74 @@ function _zenith_clientarea_render(array $params, string $rdnsMessage = '', stri
             'cpu'          => $serverInfo['cpu'] ?? '',
             'ram'          => $serverInfo['ram'] ?? '',
             'disk'         => $serverInfo['disk'] ?? '',
-            'rdns_list'    => $rdnsList,
-            'rdns_message' => $rdnsMessage,
-            'rdns_error'   => $rdnsError,
-            'serviceid'    => $params['serviceid'],
-            'whmcs_token'  => $whmcsToken,
+            'rdns_list'      => $rdnsList,
+            'action_message' => $actionMessage,
+            'action_error'   => $actionError,
+            'serviceid'      => $params['serviceid'],
+            'whmcs_token'    => $whmcsToken,
+            'status_raw'     => $statusLower,
         ],
     ];
 }
 
 function zenith_ClientArea(array $params): array {
-    $rdnsMessage = '';
-    $rdnsError   = '';
+    $actionMessage = '';
+    $actionError   = '';
 
-    // Handle rDNS form submission directly — avoids WHMCS module routing entirely
-    if (
-        $_SERVER['REQUEST_METHOD'] === 'POST' &&
-        ($_POST['zenith_action'] ?? '') === 'update_rdns'
-    ) {
-        $uuid = _zenith_getuuid($params);
-        $ip   = trim($_POST['rdns_ip']  ?? '');
-        $ptr  = trim($_POST['rdns_ptr'] ?? '');
+    if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+        $zenithAction = $_POST['zenith_action'] ?? '';
+        $uuid         = _zenith_getuuid($params);
+        $api          = $uuid ? _zenith_api($params) : null;
 
-        if (!$uuid) {
-            $rdnsError = 'VPS not provisioned yet.';
-        } elseif (!$ip) {
-            $rdnsError = 'IP address missing from request.';
-        } else {
+        if (!$uuid && $zenithAction) {
+            $actionError = 'VPS not provisioned yet.';
+        } elseif ($zenithAction === 'update_rdns') {
+            $ip  = trim($_POST['rdns_ip']  ?? '');
+            $ptr = trim($_POST['rdns_ptr'] ?? '');
+            if (!$ip) {
+                $actionError = 'IP address missing from request.';
+            } else {
+                try {
+                    $api->updateRdns($uuid, $ip, $ptr);
+                    $actionMessage = "PTR for {$ip} updated" . ($ptr ? " → {$ptr}" : ' (cleared)');
+                    logActivity("Zenith: Client updated PTR for {$ip} on VPS {$uuid} → " . ($ptr ?: '(cleared)'), $params['userid']);
+                } catch (Exception $e) { $actionError = $e->getMessage(); }
+            }
+
+        } elseif ($zenithAction === 'start') {
             try {
-                _zenith_api($params)->updateRdns($uuid, $ip, $ptr);
-                $rdnsMessage = "PTR for {$ip} updated" . ($ptr ? " → {$ptr}" : ' (cleared)');
-                logActivity(
-                    "Zenith: Client updated PTR for {$ip} on VPS {$uuid} → " . ($ptr ?: '(cleared)'),
-                    $params['userid']
-                );
-            } catch (Exception $e) {
-                $rdnsError = $e->getMessage();
+                $api->start($uuid);
+                $actionMessage = 'VPS start queued.';
+                logActivity("Zenith: Client started VPS {$uuid}", $params['userid']);
+            } catch (Exception $e) { $actionError = $e->getMessage(); }
+
+        } elseif ($zenithAction === 'stop') {
+            try {
+                $api->stop($uuid);
+                $actionMessage = 'VPS stop queued.';
+                logActivity("Zenith: Client stopped VPS {$uuid}", $params['userid']);
+            } catch (Exception $e) { $actionError = $e->getMessage(); }
+
+        } elseif ($zenithAction === 'restart') {
+            try {
+                $api->restart($uuid);
+                $actionMessage = 'VPS restart queued.';
+                logActivity("Zenith: Client restarted VPS {$uuid}", $params['userid']);
+            } catch (Exception $e) { $actionError = $e->getMessage(); }
+
+        } elseif ($zenithAction === 'reinstall') {
+            $password = trim($_POST['reinstall_password'] ?? '');
+            if (strlen($password) < 8) {
+                $actionError = 'Password must be at least 8 characters.';
+            } else {
+                try {
+                    $api->reinstall($uuid, $password);
+                    $actionMessage = 'Reinstall queued. Your VPS will be ready in a few minutes.';
+                    logActivity("Zenith: Client reinstalled VPS {$uuid}", $params['userid']);
+                } catch (Exception $e) { $actionError = $e->getMessage(); }
             }
         }
     }
 
-    return _zenith_clientarea_render($params, $rdnsMessage, $rdnsError);
+    return _zenith_clientarea_render($params, $actionMessage, $actionError);
 }
