@@ -27,7 +27,7 @@ export default function IPPools() {
     }
   };
 
-  const openEdit = (p) => { setEditPool(p.id); setEditForm({ name: p.name, gateway: p.gateway, netmask: p.netmask, leaseweb_api_key: p.leaseweb_api_key || '' }); };
+  const openEdit = (p) => { setEditPool(p.id); setEditForm({ name: p.name, gateway: p.gateway || '', netmask: p.netmask || '', node_id: p.node_id || '', leaseweb_api_key: p.leaseweb_api_key || '' }); };
   const savePool = async () => {
     try { await adminAPI.updatePool(editPool, editForm); toast.success('Pool updated'); setEditPool(null); load(); }
     catch (e) { toast.error(e.response?.data?.error || 'Failed'); }
@@ -83,8 +83,15 @@ export default function IPPools() {
           <div key={p.id} className="bg-white rounded-xl border border-slate-200 overflow-hidden">
             <div className="flex items-center justify-between p-4 cursor-pointer hover:bg-slate-50" onClick={() => toggle(p.id)}>
               <div>
-                <h3 className="font-semibold text-slate-900">{p.name}</h3>
-                <p className="text-sm text-slate-500">{p.gateway} · {p.used_ips || 0}/{p.total_ips || 0} IPs used</p>
+                <div className="flex items-center gap-2">
+                  <h3 className="font-semibold text-slate-900">{p.name}</h3>
+                  {!p.node_id && <span className="text-xs bg-amber-100 text-amber-700 px-2 py-0.5 rounded-full font-medium">No node — click edit</span>}
+                </div>
+                <p className="text-sm text-slate-500">
+                  {p.gateway || <span className="text-red-500 font-medium">No gateway!</span>}
+                  {p.netmask ? ` / ${p.netmask}` : ' / no netmask'}
+                  {' · '}{p.used_ips || 0}/{p.total_ips || 0} IPs used
+                </p>
               </div>
               <div className="flex items-center gap-3">
                 <button onClick={e => { e.stopPropagation(); openEdit(p); }} className="p-1.5 text-slate-400 hover:text-indigo-600"><Pencil size={15}/></button>
@@ -140,7 +147,20 @@ export default function IPPools() {
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-2xl p-6 w-full max-w-sm">
             <h2 className="text-lg font-bold text-slate-900 mb-4">Edit IP Pool</h2>
+            {!editForm.node_id && (
+              <div className="mb-3 px-3 py-2 bg-amber-50 border border-amber-200 rounded-lg text-xs text-amber-700">
+                This pool has no node assigned — likely because its node was deleted. Re-assign it below.
+              </div>
+            )}
             <div className="space-y-3">
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-1">Node <span className="text-red-500">*</span></label>
+                <select value={editForm.node_id || ''} onChange={e => setEditForm(f => ({...f, node_id: e.target.value}))}
+                  className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500 outline-none bg-white">
+                  <option value="">— Unassigned —</option>
+                  {nodes.filter(n => n.is_active).map(n => <option key={n.id} value={n.id}>{n.name}</option>)}
+                </select>
+              </div>
               {[['Name','name'],['Gateway','gateway'],['Netmask','netmask'],['Leaseweb API Key','leaseweb_api_key']].map(([l,k]) => (
                 <div key={k}><label className="block text-sm font-medium text-slate-700 mb-1">{l}</label>
                 <input value={editForm[k]||''} onChange={e => setEditForm(f => ({...f,[k]:e.target.value}))}

@@ -100,6 +100,90 @@ export default async function vpsRoutes(fastify) {
     return reply.status(202).send({ success: true, message: 'VPS creation queued', data: { vps: { id: vpsId, uuid, status: 'creating' } } });
   });
 
+  fastify.post('/:id/reconfigure-network', async (req, reply) => {
+    const vps = await queryOne('SELECT v.*, n.* FROM vps v JOIN nodes n ON v.node_id = n.id WHERE v.id = ?', [req.params.id]);
+    if (!vps) return reply.status(404).send({ success: false, error: 'VPS not found' });
+    if (!vps.proxmox_vmid) return reply.status(422).send({ success: false, error: 'VPS not provisioned on Proxmox' });
+
+    const ips = await query(
+      'SELECT a.*, p.netmask, p.gateway FROM ip_addresses a JOIN ip_pools p ON a.pool_id = p.id WHERE a.vps_id = ? ORDER BY a.assigned_at',
+      [req.params.id]
+    );
+    if (!ips.length) return reply.status(422).send({ success: false, error: 'No IPs assigned to this VPS — assign an IP first' });
+
+    const netmaskToCidr = (nm) => nm ? nm.split('.').reduce((acc, o) => acc + (parseInt(o) >>> 0).toString(2).split('').filter(b => b === '1').length, 0) : 24;
+    const primary = ips[0];
+    const cidr = netmaskToCidr(primary.netmask);
+    const gw = primary.gateway || '';
+    const ipConfig = `ip=${primary.ip_address}/${cidr}${gw ? ',gw=' + gw : ''}`;
+
+    const node = await queryOne('SELECT * FROM nodes WHERE id = ?', [vps.node_id]);
+    try {
+      if (vps.type === 'kvm') {
+        await proxmox.reconfigureKvmNetwork(node, vps.proxmox_vmid, ipConfig);
+      } else {
+        await proxmox.reconfigureLxcNetwork(node, vps.proxmox_vmid, ipConfig);
+      }
+    } catch (err) {
+      return reply.status(422).send({ success: false, error: err.message });
+    }
+
+    await logAction(req.user.id, 'vps_network_reconfigured', 'vps', vps.id, { ipConfig }, req.ip);
+    return reply.send({ success: true, message: 'Network reconfigured', data: { ipConfig } });
+  });
+
+  // Force-remove from Zenith DB without touching Proxmox — for VMs already deleted on Proxmox
+  fastify.delete('/:id/force', async (req, reply) => {
+    const vps = await queryOne('SELECT * FROM vps WHERE id = ?', [req.params.id]);
+    if (!vps) return reply.status(404).send({ success: false, error: 'VPS not found' });
+    await query('UPDATE ip_addresses SET vps_id = NULL, assigned_at = NULL WHERE vps_id = ?', [vps.id]);
+    await query('DELETE FROM tasks WHERE vps_id = ?', [vps.id]);
+    await query('DELETE FROM vps WHERE id = ?', [vps.id]);
+    await logAction(req.user.id, 'vps_force_deleted', 'vps', vps.id, { hostname: vps.hostname, proxmox_vmid: vps.proxmox_vmid }, req.ip);
+    return reply.send({ success: true, message: 'VPS removed from Zenith' });
+  });
+
+  fastify.post('/import', async (req, reply) => {
+    const { proxmox_vmid, hostname, user_id, node_id, plan_id, ip_address_id, whmcs_service_id, notes } = req.body || {};
+    if (!proxmox_vmid || !hostname || !user_id || !node_id || !plan_id) {
+      return reply.status(400).send({ success: false, error: 'proxmox_vmid, hostname, user_id, node_id, plan_id required' });
+    }
+
+    const node = await queryOne('SELECT * FROM nodes WHERE id = ?', [node_id]);
+    if (!node) return reply.status(404).send({ success: false, error: 'Node not found' });
+
+    const existing = await queryOne('SELECT id FROM vps WHERE proxmox_vmid = ? AND node_id = ?', [proxmox_vmid, node_id]);
+    if (existing) return reply.status(409).send({ success: false, error: `VM ${proxmox_vmid} is already registered in Zenith` });
+
+    let vmStatus = 'stopped';
+    let vmType = 'kvm';
+    try {
+      vmStatus = await proxmox.getKvmVmStatus(node, proxmox_vmid);
+      vmType = 'kvm';
+    } catch {
+      try {
+        vmStatus = await proxmox.getLxcContainerStatus(node, proxmox_vmid);
+        vmType = 'lxc';
+      } catch {
+        return reply.status(422).send({ success: false, error: `VM/CT ${proxmox_vmid} not found on selected node` });
+      }
+    }
+
+    const uuid = uuidv4();
+    const r = await query(
+      'INSERT INTO vps (uuid, proxmox_vmid, hostname, user_id, node_id, plan_id, template_id, type, status, whmcs_service_id, notes) VALUES (?, ?, ?, ?, ?, ?, NULL, ?, ?, ?, ?)',
+      [uuid, proxmox_vmid, hostname, user_id, node_id, plan_id, vmType, vmStatus, whmcs_service_id || null, notes || null]
+    );
+    const vpsId = r.insertId;
+
+    if (ip_address_id) {
+      await query('UPDATE ip_addresses SET vps_id = ?, assigned_at = NOW() WHERE id = ? AND vps_id IS NULL', [vpsId, ip_address_id]);
+    }
+
+    await logAction(req.user.id, 'vps_imported', 'vps', vpsId, { hostname, proxmox_vmid }, req.ip);
+    return reply.status(201).send({ success: true, message: 'VPS imported', data: { id: vpsId, uuid, status: vmStatus, type: vmType } });
+  });
+
   fastify.get('/:id', async (req, reply) => {
     const vps = await queryOne(
       `SELECT v.*, u.email as user_email, n.name as node_name, n.hostname as node_hostname, p.name as plan_name,

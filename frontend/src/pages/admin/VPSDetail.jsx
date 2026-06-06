@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useParams } from 'react-router-dom';
 import { adminAPI } from '../../api/client';
-import { Play, Square, RotateCcw, Zap, PauseCircle, Terminal, HardDrive, Plus, Trash2, RefreshCw } from 'lucide-react';
+import { Play, Square, RotateCcw, Zap, PauseCircle, Terminal, Plus, Trash2, RefreshCw, Network } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { useAuthStore } from '../../store/authStore';
 
@@ -97,6 +97,24 @@ export default function VPSDetail() {
     setShowReinstall(true);
   };
 
+  const forceDelete = async () => {
+    if (!window.confirm(`Force-remove "${vps.hostname}" from Zenith? This does NOT delete it from Proxmox — only removes the record from Zenith.`)) return;
+    try {
+      await adminAPI.forceDeleteVps(id);
+      toast.success('VPS removed from Zenith');
+      window.location.href = '/admin/vps';
+    } catch (e) { toast.error(e.response?.data?.error || 'Failed'); }
+  };
+
+  const reconfigureNetwork = async () => {
+    if (!window.confirm('Re-apply current IP pool gateway/netmask to this VPS and reboot. Continue?')) return;
+    try {
+      const r = await adminAPI.reconfigureNetwork(id);
+      toast.success(`Network reconfigured — applied: ${r.data.data.ipConfig}`);
+      setTimeout(load, 2000);
+    } catch (e) { toast.error(e.response?.data?.error || 'Failed'); }
+  };
+
   const confirmReinstall = async () => {
     if (!reinstallForm.root_password) { toast.error('New root password required'); return; }
     if (!window.confirm('Reinstall will erase all data on this VPS. Continue?')) return;
@@ -130,6 +148,10 @@ export default function VPSDetail() {
           <button onClick={() => action('restart','Restart')}  className="flex items-center gap-1.5 px-3 py-1.5 bg-blue-600 text-white rounded-lg text-sm hover:bg-blue-700"><RotateCcw size={14}/> Restart</button>
           <button onClick={() => action('forceStop','Force Stop')} className="flex items-center gap-1.5 px-3 py-1.5 bg-orange-600 text-white rounded-lg text-sm hover:bg-orange-700"><Zap size={14}/> Force</button>
           <button onClick={() => action('suspend','Suspend')}  className="flex items-center gap-1.5 px-3 py-1.5 bg-amber-600 text-white rounded-lg text-sm hover:bg-amber-700"><PauseCircle size={14}/> Suspend</button>
+          <button onClick={reconfigureNetwork} className="flex items-center gap-1.5 px-3 py-1.5 bg-teal-600 text-white rounded-lg text-sm hover:bg-teal-700"><Network size={14}/> Reconfig Network</button>
+          {(vps.status === 'error' || vps.status === 'deleting') && (
+            <button onClick={forceDelete} className="flex items-center gap-1.5 px-3 py-1.5 bg-red-800 text-white rounded-lg text-sm hover:bg-red-900"><Trash2 size={14}/> Force Remove</button>
+          )}
           <button onClick={openReinstall} className="flex items-center gap-1.5 px-3 py-1.5 bg-rose-600 text-white rounded-lg text-sm hover:bg-rose-700"><RefreshCw size={14}/> Reinstall</button>
           <button onClick={() => setTab('console')} className="flex items-center gap-1.5 px-3 py-1.5 bg-indigo-600 text-white rounded-lg text-sm hover:bg-indigo-700"><Terminal size={14}/> Console</button>
         </div>

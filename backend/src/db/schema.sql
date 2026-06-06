@@ -90,7 +90,7 @@ CREATE TABLE IF NOT EXISTS vps (
   user_id        INT UNSIGNED NOT NULL,
   node_id        INT UNSIGNED NOT NULL,
   plan_id        INT UNSIGNED NOT NULL,
-  template_id    INT UNSIGNED NOT NULL,
+  template_id    INT UNSIGNED NULL,
   type           ENUM('kvm','lxc') NOT NULL DEFAULT 'kvm',
   status         ENUM('creating','running','stopped','suspended','reinstalling','deleting','error') NOT NULL DEFAULT 'creating',
   whmcs_service_id VARCHAR(50),

@@ -220,10 +220,15 @@ export async function createKvmVm(node, { vmid, templateVmid, hostname, cpus, ra
 
 export async function deleteKvmVm(node, vmid) {
   const pveNode = node.proxmox_node || 'pve';
-  // Stop first (ignore errors if already stopped)
   await req(node, 'POST', `/nodes/${pveNode}/qemu/${vmid}/status/stop`).catch(() => {});
   await new Promise(r => setTimeout(r, 3000));
-  const task = await req(node, 'DELETE', `/nodes/${pveNode}/qemu/${vmid}`, { purge: 1 });
+  let task;
+  try {
+    task = await req(node, 'DELETE', `/nodes/${pveNode}/qemu/${vmid}`, { purge: 1 });
+  } catch (err) {
+    if (err.message.includes('does not exist') || err.message.includes('404')) return;
+    throw err;
+  }
   await waitForTask(node, task);
 }
 
@@ -417,7 +422,13 @@ export async function deleteLxcContainer(node, vmid) {
   const pveNode = node.proxmox_node || 'pve';
   await req(node, 'POST', `/nodes/${pveNode}/lxc/${vmid}/status/stop`).catch(() => {});
   await new Promise(r => setTimeout(r, 2000));
-  const task = await req(node, 'DELETE', `/nodes/${pveNode}/lxc/${vmid}`);
+  let task;
+  try {
+    task = await req(node, 'DELETE', `/nodes/${pveNode}/lxc/${vmid}`);
+  } catch (err) {
+    if (err.message.includes('does not exist') || err.message.includes('404')) return;
+    throw err;
+  }
   await waitForTask(node, task);
 }
 
@@ -475,6 +486,28 @@ export async function getLxcVncProxy(node, vmid) {
     ticket:  data.ticket,
     vmid,
   };
+}
+
+// ─── Network reconfiguration ─────────────────────────────────────────────────
+
+export async function reconfigureKvmNetwork(node, vmid, ipConfig) {
+  const pveNode = node.proxmox_node || 'pve';
+  await req(node, 'PUT', `/nodes/${pveNode}/qemu/${vmid}/config`, { ipconfig0: ipConfig });
+  // Regenerate cloud-init image with new config
+  await req(node, 'POST', `/nodes/${pveNode}/qemu/${vmid}/cloudinit`).catch(() => {});
+  const task = await req(node, 'POST', `/nodes/${pveNode}/qemu/${vmid}/status/reboot`);
+  await waitForTask(node, task);
+}
+
+export async function reconfigureLxcNetwork(node, vmid, ipConfig) {
+  const pveNode = node.proxmox_node || 'pve';
+  await req(node, 'POST', `/nodes/${pveNode}/lxc/${vmid}/status/stop`).catch(() => {});
+  await new Promise(r => setTimeout(r, 3000));
+  await req(node, 'PUT', `/nodes/${pveNode}/lxc/${vmid}/config`, {
+    net0: `name=eth0,bridge=vmbr0,${ipConfig},firewall=1`,
+  });
+  const task = await req(node, 'POST', `/nodes/${pveNode}/lxc/${vmid}/status/start`);
+  await waitForTask(node, task);
 }
 
 // ─── Backup (vzdump) ─────────────────────────────────────────────────────────

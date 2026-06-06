@@ -1,6 +1,6 @@
 import { query, queryOne } from '../../config/database.js';
 import { adminOnly } from '../../middleware/authenticate.js';
-import { listAvailableLxcTemplates, downloadLxcTemplate } from '../../services/proxmox.js';
+import { listAvailableLxcTemplates, downloadLxcTemplate, listStorageTemplates } from '../../services/proxmox.js';
 
 export default async function templateRoutes(fastify) {
   fastify.addHook('preHandler', adminOnly);
@@ -40,6 +40,25 @@ export default async function templateRoutes(fastify) {
     if (inUse) return reply.status(409).send({ success: false, error: 'Template in use by existing VPS' });
     await query('DELETE FROM templates WHERE id = ?', [req.params.id]);
     return reply.send({ success: true });
+  });
+
+  // List LXC templates actually installed on the node's storage
+  fastify.get('/proxmox/:nodeId/installed', async (req, reply) => {
+    const node = await queryOne('SELECT * FROM nodes WHERE id = ?', [req.params.nodeId]);
+    if (!node) return reply.status(404).send({ success: false, error: 'Node not found' });
+    const storage = req.query.storage || node.storage || 'local';
+    try {
+      const all = await listStorageTemplates(node, storage);
+      const templates = all.filter(i => i.content === 'vztmpl').map(i => ({
+        volid:   i.volid,
+        name:    i.volid.split('/').pop(),
+        size:    i.size,
+        ctime:   i.ctime,
+      }));
+      return reply.send({ success: true, data: templates });
+    } catch (err) {
+      return reply.status(422).send({ success: false, error: err.message });
+    }
   });
 
   // List available LXC templates from Proxmox node (for auto-populate)

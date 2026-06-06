@@ -33,8 +33,15 @@ export default async function ipPoolRoutes(fastify) {
 
   fastify.put('/:id', async (req, reply) => {
     const { name, gateway, netmask, node_id, leaseweb_api_key } = req.body || {};
-    await query('UPDATE ip_pools SET name=COALESCE(?,name), gateway=COALESCE(?,gateway), netmask=COALESCE(?,netmask), node_id=COALESCE(?,node_id), leaseweb_api_key=? WHERE id=?',
-      [name??null, gateway??null, netmask??null, node_id??null, leaseweb_api_key||null, req.params.id]);
+    // Treat empty string the same as omitted — COALESCE will keep the existing value
+    const gwVal   = (gateway === '' || gateway == null) ? null : gateway;
+    const nmVal   = (netmask === '' || netmask == null) ? null : netmask;
+    // node_id: empty string means "unassign"; a numeric value re-assigns to that node
+    const nodeVal = (node_id === '' || node_id == null) ? null : parseInt(node_id);
+    await query(
+      'UPDATE ip_pools SET name=COALESCE(?,name), gateway=COALESCE(?,gateway), netmask=COALESCE(?,netmask), node_id=?, leaseweb_api_key=? WHERE id=?',
+      [name??null, gwVal, nmVal, nodeVal, leaseweb_api_key||null, req.params.id]
+    );
     return reply.send({ success: true });
   });
 

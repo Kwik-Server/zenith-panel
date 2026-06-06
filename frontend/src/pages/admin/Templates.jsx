@@ -9,7 +9,9 @@ export default function Templates() {
   const [showModal, setShowModal] = useState(false);
   const [showBrowse, setShowBrowse] = useState(false);
   const [browseNode, setBrowseNode] = useState('');
+  const [browseTab, setBrowseTab] = useState('installed');
   const [available, setAvailable] = useState([]);
+  const [installed, setInstalled] = useState([]);
   const [form, setForm] = useState({ name: '', type: 'kvm', proxmox_template_id: '', os_family: '', description: '' });
   const [editing, setEditing] = useState(null);
 
@@ -40,16 +42,25 @@ export default function Templates() {
     setEditing(t.id); setShowModal(true);
   };
 
-  const browse = async () => {
+  const browse = async (tab = browseTab) => {
     if (!browseNode) return;
+    setBrowseTab(tab);
     try {
-      const r = await adminAPI.proxmoxTemplates(browseNode);
-      setAvailable(r.data.data || []); setShowBrowse(true);
+      if (tab === 'installed') {
+        const r = await adminAPI.proxmoxInstalledTemplates(browseNode);
+        setInstalled(r.data.data || []);
+      } else {
+        const r = await adminAPI.proxmoxTemplates(browseNode);
+        setAvailable(r.data.data || []);
+      }
+      setShowBrowse(true);
     } catch (e) { toast.error(e.response?.data?.error || 'Failed to fetch templates'); }
   };
 
-  const importTemplate = async (tpl) => {
-    setForm({ name: tpl.name || tpl.package, type: 'lxc', proxmox_template_id: tpl.template || tpl.volid || '', os_family: tpl.os || '', description: tpl.description || '' });
+  const importTemplate = (tpl) => {
+    const volid = tpl.volid || tpl.template || '';
+    const name  = tpl.name || tpl.package || volid.split('/').pop() || '';
+    setForm({ name, type: 'lxc', proxmox_template_id: volid, os_family: tpl.os || '', description: tpl.description || '' });
     setShowBrowse(false); setShowModal(true);
   };
 
@@ -147,22 +158,51 @@ export default function Templates() {
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-2xl p-6 w-full max-w-2xl max-h-[80vh] flex flex-col">
             <div className="flex justify-between items-center mb-4">
-              <h2 className="text-lg font-bold text-slate-900">Available LXC Templates</h2>
+              <h2 className="text-lg font-bold text-slate-900">Proxmox Templates</h2>
               <button onClick={() => setShowBrowse(false)} className="text-slate-400 hover:text-slate-600 text-2xl leading-none">×</button>
             </div>
-            <div className="overflow-y-auto flex-1 space-y-2">
-              {available.map((t, i) => (
-                <div key={i} className="flex items-center justify-between p-3 border border-slate-200 rounded-xl hover:bg-slate-50">
-                  <div>
-                    <p className="text-sm font-medium text-slate-900">{t.name || t.package}</p>
-                    <p className="text-xs text-slate-400 font-mono">{t.template || t.volid}</p>
-                  </div>
-                  <button onClick={() => importTemplate(t)} className="flex items-center gap-1 text-xs text-indigo-600 hover:text-indigo-800 font-medium">
-                    <Download size={13} /> Import
-                  </button>
-                </div>
+            <div className="flex gap-1 mb-4 border-b border-slate-200">
+              {[['installed','Installed on node'],['available','Download library']].map(([t,l]) => (
+                <button key={t} onClick={() => browse(t)}
+                  className={`px-4 py-2 text-sm font-medium border-b-2 -mb-px transition-colors ${browseTab === t ? 'border-indigo-600 text-indigo-600' : 'border-transparent text-slate-500 hover:text-slate-700'}`}>
+                  {l}
+                </button>
               ))}
-              {!available.length && <p className="text-center text-slate-400 py-8">No templates found on this node</p>}
+            </div>
+            <div className="overflow-y-auto flex-1 space-y-2">
+              {browseTab === 'installed' && (
+                <>
+                  {installed.length === 0 && <p className="text-center text-slate-400 py-8">No LXC templates found in storage.<br/><span className="text-sm">Upload a .tar.zst file via Proxmox UI or switch to the Download library tab.</span></p>}
+                  {installed.map((t, i) => (
+                    <div key={i} className="flex items-center justify-between p-3 border border-slate-200 rounded-xl hover:bg-slate-50">
+                      <div>
+                        <p className="text-sm font-medium text-slate-900">{t.name}</p>
+                        <p className="text-xs text-slate-400 font-mono">{t.volid}</p>
+                        {t.size && <p className="text-xs text-slate-400">{(t.size / 1024 / 1024).toFixed(1)} MB</p>}
+                      </div>
+                      <button onClick={() => importTemplate(t)} className="flex items-center gap-1 text-xs text-indigo-600 hover:text-indigo-800 font-medium">
+                        <Download size={13} /> Use this
+                      </button>
+                    </div>
+                  ))}
+                </>
+              )}
+              {browseTab === 'available' && (
+                <>
+                  {available.length === 0 && <p className="text-center text-slate-400 py-8">No templates found</p>}
+                  {available.map((t, i) => (
+                    <div key={i} className="flex items-center justify-between p-3 border border-slate-200 rounded-xl hover:bg-slate-50">
+                      <div>
+                        <p className="text-sm font-medium text-slate-900">{t.name || t.package}</p>
+                        <p className="text-xs text-slate-400 font-mono">{t.template || t.volid}</p>
+                      </div>
+                      <button onClick={() => importTemplate(t)} className="flex items-center gap-1 text-xs text-indigo-600 hover:text-indigo-800 font-medium">
+                        <Download size={13} /> Import
+                      </button>
+                    </div>
+                  ))}
+                </>
+              )}
             </div>
           </div>
         </div>

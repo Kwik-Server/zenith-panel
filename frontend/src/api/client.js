@@ -56,6 +56,9 @@ export const adminAPI = {
   // VPS
   getVps:      (params) => api.get('/admin/vps', { params }),
   createVps:   (d)      => api.post('/admin/vps', d),
+  importVps:           (d)   => api.post('/admin/vps/import', d),
+  reconfigureNetwork:  (id)  => api.post(`/admin/vps/${id}/reconfigure-network`),
+  forceDeleteVps:      (id)  => api.delete(`/admin/vps/${id}/force`),
   getVpsDetail:(id)     => api.get(`/admin/vps/${id}`),
   deleteVps:   (id)     => api.delete(`/admin/vps/${id}`),
   vpsAction:   (id, a, d) => api.post(`/admin/vps/${id}/${a}`, d || {}),
@@ -85,7 +88,8 @@ export const adminAPI = {
   createTemplate:  (d)      => api.post('/admin/templates', d),
   updateTemplate:  (id, d)  => api.put(`/admin/templates/${id}`, d),
   deleteTemplate:  (id)     => api.delete(`/admin/templates/${id}`),
-  proxmoxTemplates:(nodeId) => api.get(`/admin/templates/proxmox/${nodeId}/available`),
+  proxmoxTemplates:         (nodeId)        => api.get(`/admin/templates/proxmox/${nodeId}/available`),
+  proxmoxInstalledTemplates:(nodeId, storage) => api.get(`/admin/templates/proxmox/${nodeId}/installed${storage ? `?storage=${storage}` : ''}`),
   downloadTemplate:(nodeId,d) => api.post(`/admin/templates/proxmox/${nodeId}/download`, d),
 
   // IP Pools

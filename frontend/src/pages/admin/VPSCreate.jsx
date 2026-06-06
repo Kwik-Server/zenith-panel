@@ -86,12 +86,12 @@ export default function VPSCreate() {
   const selectedPlan = plans.find(p => p.id == form.plan_id);
   const selectedTpl  = templates.find(t => t.id == form.template_id);
 
-  const locations = [...new Set(nodeAvailability.map(n => n.location).filter(Boolean))].sort();
+  const locLabel = (loc) => loc || 'Default';
+  const locations = [...new Set(nodeAvailability.map(n => locLabel(n.location)))].sort();
 
   const eligibleNodes = nodeAvailability
     .filter(n => {
-      if (n.location !== selectedLocation) return false;
-      if (n.free_ip_count < 1) return false;
+      if (locLabel(n.location) !== selectedLocation) return false;
       if (selectedPlan) {
         if (n.total_ram  > 0 && n.available_ram  < selectedPlan.ram)  return false;
         if (n.total_disk > 0 && n.available_disk < selectedPlan.disk) return false;
@@ -100,10 +100,10 @@ export default function VPSCreate() {
     })
     .sort((a, b) => b.available_ram - a.available_ram);
 
-  // Auto-select when exactly one eligible node exists
   useEffect(() => {
-    if (eligibleNodes.length === 1) {
-      update('node_id', eligibleNodes[0].id);
+    const selectable = eligibleNodes.filter(n => n.free_ip_count > 0);
+    if (selectable.length === 1) {
+      update('node_id', selectable[0].id);
     } else if (selectedLocation) {
       update('node_id', '');
     }
@@ -208,46 +208,49 @@ export default function VPSCreate() {
                 <label className="block text-sm font-medium text-slate-700 mb-2">Node</label>
                 {eligibleNodes.length === 0 && (
                   <p className="text-sm text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
-                    No nodes in {selectedLocation} have enough resources + free IPs for this plan.
+                    No nodes in {selectedLocation} have enough resources for this plan.
                   </p>
                 )}
-                {eligibleNodes.length === 1 && (
-                  <div className="flex items-center justify-between p-3 border-2 rounded-xl border-indigo-500 bg-indigo-50">
-                    <div>
-                      <p className="font-medium text-slate-900">{eligibleNodes[0].name}</p>
-                      <p className="text-xs text-slate-500">
-                        {eligibleNodes[0].free_ip_count} free IP{eligibleNodes[0].free_ip_count !== 1 ? 's' : ''}
-                        {eligibleNodes[0].total_ram  > 0 && ` · ${eligibleNodes[0].available_ram >= 1024 ? `${Math.floor(eligibleNodes[0].available_ram / 1024)}GB` : `${eligibleNodes[0].available_ram}MB`} RAM free`}
-                        {eligibleNodes[0].total_disk > 0 && ` · ${eligibleNodes[0].available_disk}GB disk free`}
-                        {(eligibleNodes[0].total_ram === 0 || eligibleNodes[0].total_disk === 0) && <span className="ml-1 text-amber-500">(capacity not configured)</span>}
-                      </p>
+                {eligibleNodes.length > 0 && (() => {
+                  const selectable = eligibleNodes.filter(n => n.free_ip_count > 0);
+                  return (
+                    <div className="space-y-2">
+                      {eligibleNodes.map((n, idx) => {
+                        const noIps    = n.free_ip_count < 1;
+                        const isAuto   = selectable.length === 1 && selectable[0].id === n.id;
+                        const isMostFree = !noIps && idx === eligibleNodes.findIndex(x => x.free_ip_count > 0);
+                        return (
+                          <label key={n.id} className={`flex items-center justify-between p-3 border-2 rounded-xl transition-colors ${
+                            noIps
+                              ? 'border-slate-200 bg-slate-50 opacity-60 cursor-not-allowed'
+                              : form.node_id == n.id
+                                ? 'border-indigo-500 bg-indigo-50 cursor-pointer'
+                                : 'border-slate-200 hover:border-slate-300 cursor-pointer'
+                          }`}>
+                            <input type="radio" name="node" value={n.id} checked={form.node_id == n.id}
+                              onChange={() => !noIps && update('node_id', n.id)} disabled={noIps} className="sr-only" />
+                            <div>
+                              <p className="font-medium text-slate-900">{n.name}</p>
+                              <p className="text-xs text-slate-500">
+                                {noIps
+                                  ? <span className="text-red-500">No free IPs — assign IPs to this node's pool first</span>
+                                  : <>
+                                      {n.free_ip_count} free IP{n.free_ip_count !== 1 ? 's' : ''}
+                                      {n.total_ram  > 0 && ` · ${n.available_ram >= 1024 ? `${Math.floor(n.available_ram / 1024)}GB` : `${n.available_ram}MB`} RAM free`}
+                                      {n.total_disk > 0 && ` · ${n.available_disk}GB disk free`}
+                                      {(n.total_ram === 0 || n.total_disk === 0) && <span className="ml-1 text-amber-500">(capacity not configured)</span>}
+                                    </>
+                                }
+                              </p>
+                            </div>
+                            {isAuto   && <span className="text-xs bg-indigo-100 text-indigo-700 px-2 py-0.5 rounded-full font-medium">Auto-selected</span>}
+                            {isMostFree && !isAuto && <span className="text-xs bg-green-100 text-green-700 px-2 py-0.5 rounded-full font-medium">Most free</span>}
+                          </label>
+                        );
+                      })}
                     </div>
-                    <span className="text-xs bg-indigo-100 text-indigo-700 px-2 py-0.5 rounded-full font-medium">Auto-selected</span>
-                  </div>
-                )}
-                {eligibleNodes.length > 1 && (
-                  <div className="space-y-2">
-                    {eligibleNodes.map((n, idx) => (
-                      <label key={n.id} className={`flex items-center justify-between p-3 border-2 rounded-xl cursor-pointer transition-colors ${
-                        form.node_id == n.id ? 'border-indigo-500 bg-indigo-50' : 'border-slate-200 hover:border-slate-300'
-                      }`}>
-                        <input type="radio" name="node" value={n.id} checked={form.node_id == n.id} onChange={() => update('node_id', n.id)} className="sr-only" />
-                        <div>
-                          <p className="font-medium text-slate-900">{n.name}</p>
-                          <p className="text-xs text-slate-500">
-                            {n.free_ip_count} free IP{n.free_ip_count !== 1 ? 's' : ''}
-                            {n.total_ram  > 0 && ` · ${n.available_ram >= 1024 ? `${Math.floor(n.available_ram / 1024)}GB` : `${n.available_ram}MB`} RAM free`}
-                            {n.total_disk > 0 && ` · ${n.available_disk}GB disk free`}
-                            {(n.total_ram === 0 || n.total_disk === 0) && <span className="ml-1 text-amber-500">(capacity not configured)</span>}
-                          </p>
-                        </div>
-                        {idx === 0 && (
-                          <span className="text-xs bg-green-100 text-green-700 px-2 py-0.5 rounded-full font-medium">Most free</span>
-                        )}
-                      </label>
-                    ))}
-                  </div>
-                )}
+                  );
+                })()}
               </div>
             )}
             <div>
@@ -367,7 +370,7 @@ export default function VPSCreate() {
             </div>
             <div className="flex gap-3 mt-2">
               <button onClick={() => setStep(2)} className="text-slate-600 px-4 py-2 rounded-lg border border-slate-200 text-sm">← Back</button>
-              <button onClick={() => setStep(4)} disabled={!form.hostname || !form.root_password || !form.node_id || !form.user_id} className="bg-indigo-600 text-white px-6 py-2 rounded-lg text-sm font-medium disabled:opacity-40">Review →</button>
+              <button onClick={() => setStep(4)} disabled={!form.hostname || !form.root_password || !form.node_id || !form.user_id || (nodeAvailability.find(n => n.id == form.node_id)?.free_ip_count < 1)} className="bg-indigo-600 text-white px-6 py-2 rounded-lg text-sm font-medium disabled:opacity-40">Review →</button>
             </div>
           </div>
         )}
