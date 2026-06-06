@@ -38,6 +38,49 @@
     </div>
   </div>
 
+  {if $rdns_message}
+  <div style="margin-bottom:14px;padding:10px 14px;border-radius:10px;background:rgba(99,102,241,0.15);border:1px solid rgba(99,102,241,0.3);color:#a5b4fc;font-size:13px;">
+    &#10003; {$rdns_message}
+  </div>
+  {/if}
+  {if $rdns_error}
+  <div style="margin-bottom:14px;padding:10px 14px;border-radius:10px;background:rgba(239,68,68,0.15);border:1px solid rgba(239,68,68,0.3);color:#fca5a5;font-size:13px;">
+    &#9888; {$rdns_error}
+  </div>
+  {/if}
+
+  {if $rdns_list}
+  <div style="border-top:1px solid rgba(255,255,255,0.07);padding-top:14px;margin-bottom:16px;">
+    <div style="font-size:11px;color:#64748b;text-transform:uppercase;letter-spacing:.06em;font-weight:600;margin-bottom:10px;">rDNS / PTR Records</div>
+    {foreach from=$rdns_list item=entry}
+    <div style="margin-bottom:12px;">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;font-size:12px;">
+        <span style="color:#94a3b8;font-family:monospace;">{$entry.ip}</span>
+        <span style="color:{if $entry.ptr}#e2e8f0{else}#475569{/if};font-family:monospace;">{if $entry.ptr}{$entry.ptr}{else}<em>not set</em>{/if}</span>
+      </div>
+      {if !$entry.error}
+      <form method="post" action="clientarea.php" style="display:flex;gap:8px;">
+        <input type="hidden" name="action"    value="productdetails" />
+        <input type="hidden" name="id"        value="{$serviceid}" />
+        <input type="hidden" name="modop"     value="custom" />
+        <input type="hidden" name="a"         value="UpdateRdns" />
+        <input type="hidden" name="rdns_ip"   value="{$entry.ip}" />
+        <input type="text"   name="rdns_ptr"  value="{$entry.ptr}"
+          placeholder="e.g. mail.example.com"
+          style="flex:1;background:rgba(255,255,255,0.07);border:1px solid rgba(255,255,255,0.12);border-radius:8px;padding:8px 10px;color:#f1f5f9;font-size:12px;font-family:monospace;outline:none;box-sizing:border-box;" />
+        <button type="submit"
+          style="padding:8px 16px;background:#6366f1;border:none;border-radius:8px;color:#fff;font-size:12px;font-weight:600;cursor:pointer;white-space:nowrap;">
+          Save PTR
+        </button>
+      </form>
+      {else}
+      <div style="font-size:11px;color:#f87171;padding:4px 0;">{$entry.error}</div>
+      {/if}
+    </div>
+    {/foreach}
+  </div>
+  {/if}
+
   <a href="{$login_url}" target="_blank" style="display:block;width:100%;padding:14px;border-radius:12px;background:linear-gradient(135deg,#6366f1,#8b5cf6);color:#fff;font-size:15px;font-weight:700;text-align:center;text-decoration:none;box-sizing:border-box;">
     &#10141; Manage VPS
   </a>

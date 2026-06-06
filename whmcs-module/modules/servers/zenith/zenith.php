@@ -276,7 +276,41 @@ function zenith_AdminLink(array $params): string {
     return "<a href=\"{$scheme}://{$host}/admin\" target=\"_blank\" class=\"btn btn-default\">Open Zenith Admin</a>";
 }
 
-function zenith_ClientArea(array $params): array {
+function zenith_ClientAreaAllowedFunctions(): array {
+    return ['UpdateRdns' => 'Update rDNS/PTR'];
+}
+
+function zenith_UpdateRdns(array $params): array {
+    $uuid = _zenith_getuuid($params);
+    $ip   = trim($_POST['rdns_ip']  ?? '');
+    $ptr  = trim($_POST['rdns_ptr'] ?? '');
+
+    $rdnsMessage = '';
+    $rdnsError   = '';
+
+    if ($uuid && $ip) {
+        try {
+            _zenith_api($params)->updateRdns($uuid, $ip, $ptr);
+            $rdnsMessage = "PTR record for {$ip} updated" . ($ptr ? " → {$ptr}" : ' (cleared)');
+            logActivity("Zenith: Client updated PTR for {$ip} on VPS {$uuid} → " . ($ptr ?: '(cleared)'), $params['userid']);
+        } catch (Exception $e) {
+            $rdnsError = $e->getMessage();
+        }
+    }
+
+    // Re-render the full client area with the result message
+    return _zenith_clientarea_render($params, $rdnsMessage, $rdnsError);
+}
+
+function _zenith_rdns_fetch(array $params, string $uuid): array {
+    try {
+        return _zenith_api($params)->getRdns($uuid);
+    } catch (Exception $e) {
+        return [];
+    }
+}
+
+function _zenith_clientarea_render(array $params, string $rdnsMessage = '', string $rdnsError = ''): array {
     $scheme   = !empty($params['serversecure']) ? 'https' : 'http';
     $panelUrl = "{$scheme}://{$params['serverhostname']}";
     $uuid     = _zenith_getuuid($params);
@@ -287,6 +321,7 @@ function zenith_ClientArea(array $params): array {
     $ipAddress  = $params['model']->dedicatedip ?? '';
     $osName     = $params['customfields']['Operating System'] ?? 'Linux VPS';
     $error      = '';
+    $rdnsList   = [];
 
     if ($uuid) {
         try {
@@ -303,16 +338,16 @@ function zenith_ClientArea(array $params): array {
         } catch (Exception $e) {
             $error = 'Could not fetch VPS status.';
         }
+
+        $rdnsList = _zenith_rdns_fetch($params, $uuid);
     }
 
-    // Generate magic link for auto-login
     try {
         $result = _zenith_api($params)->generateLoginToken($params['clientsdetails']['email']);
         $token  = $result['token'] ?? '';
         if ($token) $loginUrl = $panelUrl . '/autologin?token=' . urlencode($token);
     } catch (Exception $e) {}
 
-    // Status styling
     $statusMap = [
         'running'     => ['bg' => 'rgba(34,197,94,0.15)',  'color' => '#4ade80', 'dot' => '&#9679;'],
         'stopped'     => ['bg' => 'rgba(148,163,184,0.15)','color' => '#94a3b8', 'dot' => '&#9675;'],
@@ -325,17 +360,25 @@ function zenith_ClientArea(array $params): array {
     return [
         'templatefile' => 'clientarea',
         'vars' => [
-            'hostname'    => $params['model']->domain ?: $ipAddress,
-            'status'      => $status,
-            'status_bg'   => $s['bg'],
-            'status_color'=> $s['color'],
-            'status_dot'  => $s['dot'],
-            'login_url'   => $loginUrl,
-            'ip_address'  => $ipAddress ?: 'Provisioning...',
-            'os_name'     => $osName,
-            'cpu'         => $serverInfo['cpu'] ?? '',
-            'ram'         => $serverInfo['ram'] ?? '',
-            'disk'        => $serverInfo['disk'] ?? '',
+            'hostname'     => $params['model']->domain ?: $ipAddress,
+            'status'       => $status,
+            'status_bg'    => $s['bg'],
+            'status_color' => $s['color'],
+            'status_dot'   => $s['dot'],
+            'login_url'    => $loginUrl,
+            'ip_address'   => $ipAddress ?: 'Provisioning...',
+            'os_name'      => $osName,
+            'cpu'          => $serverInfo['cpu'] ?? '',
+            'ram'          => $serverInfo['ram'] ?? '',
+            'disk'         => $serverInfo['disk'] ?? '',
+            'rdns_list'    => $rdnsList,
+            'rdns_message' => $rdnsMessage,
+            'rdns_error'   => $rdnsError,
+            'serviceid'    => $params['serviceid'],
         ],
     ];
+}
+
+function zenith_ClientArea(array $params): array {
+    return _zenith_clientarea_render($params);
 }
