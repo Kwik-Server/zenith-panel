@@ -174,7 +174,8 @@ function zenith_AdminServicesTabFields(array $params): array {
         return ['Zenith Status' => 'VPS not yet provisioned'];
     }
     try {
-        $data   = _zenith_api($params)->getStatus($uuid);
+        $api    = _zenith_api($params);
+        $data   = $api->getStatus($uuid);
         $ip     = $data['ip_address'] ?? '';
         $status = ucfirst($data['status'] ?? 'unknown');
 
@@ -186,14 +187,74 @@ function zenith_AdminServicesTabFields(array $params): array {
             ]);
         }
 
-        return [
+        $fields = [
             'VPS Status'  => $status,
             'Assigned IP' => $ip ?: 'Not yet assigned (provisioning in progress)',
             'UUID'        => $uuid,
         ];
+
+        // rDNS / PTR fields — one editable input per assigned IP
+        try {
+            $rdnsList = $api->getRdns($uuid);
+            foreach ($rdnsList as $entry) {
+                $ipAddr    = htmlspecialchars($entry['ip'] ?? '');
+                $ptr       = htmlspecialchars($entry['ptr'] ?? '');
+                $fieldName = 'rdns_' . str_replace(['.', ':'], '_', $ipAddr);
+                $errNote   = isset($entry['error'])
+                    ? ' &nbsp;<span style="color:#c0392b;font-size:11px">(' . htmlspecialchars($entry['error']) . ')</span>'
+                    : '';
+                $fields["PTR for {$ipAddr}"] =
+                    '<input type="text" name="' . $fieldName . '" value="' . $ptr . '" '
+                    . 'style="width:300px;padding:3px 6px;font-family:monospace" '
+                    . 'placeholder="e.g. mail.example.com" />' . $errNote;
+            }
+            if (empty($rdnsList)) {
+                $fields['rDNS'] = 'No IPs assigned to this VPS.';
+            }
+        } catch (Exception $e) {
+            $fields['rDNS Error'] = htmlspecialchars($e->getMessage());
+        }
+
+        return $fields;
     } catch (Exception $e) {
         return ['Zenith Error' => $e->getMessage()];
     }
+}
+
+function zenith_AdminServicesTabFieldsSave(array $params): string {
+    $uuid = _zenith_getuuid($params);
+    if (!$uuid) return '';
+
+    $api = _zenith_api($params);
+
+    try {
+        $rdnsList = $api->getRdns($uuid);
+    } catch (Exception $e) {
+        return 'Could not fetch rDNS records: ' . $e->getMessage();
+    }
+
+    $errors = [];
+    foreach ($rdnsList as $entry) {
+        $ipAddr    = $entry['ip'] ?? '';
+        $fieldName = 'rdns_' . str_replace(['.', ':'], '_', $ipAddr);
+        if (!array_key_exists($fieldName, $params['modulefields'] ?? [])) continue;
+
+        $newPtr = trim($params['modulefields'][$fieldName]);
+        $oldPtr = $entry['ptr'] ?? '';
+        if ($newPtr === $oldPtr) continue;
+
+        try {
+            $api->updateRdns($uuid, $ipAddr, $newPtr);
+            logActivity(
+                "Zenith: Admin updated PTR for {$ipAddr} on VPS {$uuid} → " . ($newPtr ?: '(cleared)'),
+                $params['userid']
+            );
+        } catch (Exception $e) {
+            $errors[] = "Failed {$ipAddr}: " . $e->getMessage();
+        }
+    }
+
+    return implode('; ', $errors);
 }
 
 function zenith_TestConnection(array $params): array {

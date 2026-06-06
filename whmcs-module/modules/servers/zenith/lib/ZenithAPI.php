@@ -33,6 +33,14 @@ class ZenithAPI {
         return $this->request('POST', '/whmcs/autologin', ['user_email' => $email]);
     }
 
+    public function getRdns(string $uuid): array {
+        return $this->request('GET', "/whmcs/{$uuid}/rdns");
+    }
+
+    public function updateRdns(string $uuid, string $ip, string $ptr): array {
+        return $this->request('PUT', "/whmcs/{$uuid}/rdns", ['ip' => $ip, 'ptr' => $ptr]);
+    }
+
     public function testConnection(): bool {
         try {
             $result = $this->request('GET', '/whmcs/ping');

@@ -134,6 +134,46 @@ export default async function whmcsRoutes(fastify) {
     return reply.status(202).send({ success: true });
   });
 
+  fastify.get('/:uuid/rdns', async (req, reply) => {
+    const vps = await queryOne('SELECT * FROM vps WHERE uuid = ?', [req.params.uuid]);
+    if (!vps) return reply.status(404).send({ success: false, error: 'VPS not found' });
+    const ips = await query(
+      'SELECT a.ip_address, p.leaseweb_api_key FROM ip_addresses a JOIN ip_pools p ON a.pool_id = p.id WHERE a.vps_id = ?',
+      [vps.id]
+    );
+    const { fetch } = await import('undici');
+    const results = await Promise.all(ips.map(async (ip) => {
+      if (!ip.leaseweb_api_key) return { ip: ip.ip_address, ptr: '', error: 'No API key on pool' };
+      try {
+        const res  = await fetch(`https://api.leaseweb.com/ipMgmt/v2/ips/${ip.ip_address}`, { headers: { 'X-LSW-Auth': ip.leaseweb_api_key } });
+        const data = await res.json();
+        return { ip: ip.ip_address, ptr: data.reverseLookup || '' };
+      } catch { return { ip: ip.ip_address, ptr: '', error: 'API error' }; }
+    }));
+    return reply.send({ success: true, data: results });
+  });
+
+  fastify.put('/:uuid/rdns', async (req, reply) => {
+    const { ip, ptr } = req.body || {};
+    if (!ip || ptr === undefined) return reply.status(400).send({ success: false, error: 'ip and ptr required' });
+    const vps = await queryOne('SELECT * FROM vps WHERE uuid = ?', [req.params.uuid]);
+    if (!vps) return reply.status(404).send({ success: false, error: 'VPS not found' });
+    const ipRow = await queryOne(
+      'SELECT a.ip_address, p.leaseweb_api_key FROM ip_addresses a JOIN ip_pools p ON a.pool_id = p.id WHERE a.ip_address = ? AND a.vps_id = ?',
+      [ip, vps.id]
+    );
+    if (!ipRow) return reply.status(404).send({ success: false, error: 'IP not found on this VPS' });
+    if (!ipRow.leaseweb_api_key) return reply.status(422).send({ success: false, error: 'No Leaseweb API key on this pool' });
+    const { fetch } = await import('undici');
+    const res = await fetch(`https://api.leaseweb.com/ipMgmt/v2/ips/${ip}`, {
+      method: 'PUT',
+      headers: { 'X-LSW-Auth': ipRow.leaseweb_api_key, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ reverseLookup: ptr }),
+    });
+    if (!res.ok) return reply.status(422).send({ success: false, error: `Leaseweb API error: HTTP ${res.status}` });
+    return reply.send({ success: true });
+  });
+
   fastify.get('/:uuid/status', async (req, reply) => {
     const vps = await queryOne(
       `SELECT v.*, p.cpu, p.ram, p.disk,
