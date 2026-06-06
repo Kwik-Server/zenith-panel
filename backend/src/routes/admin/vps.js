@@ -301,6 +301,48 @@ export default async function vpsRoutes(fastify) {
     return reply.send({ success: true });
   });
 
+  // rDNS / PTR management via Leaseweb API
+  fastify.get('/:id/rdns', async (req, reply) => {
+    const vps = await queryOne('SELECT * FROM vps WHERE id = ?', [req.params.id]);
+    if (!vps) return reply.status(404).send({ success: false, error: 'VPS not found' });
+    const ips = await query(
+      'SELECT a.ip_address, p.leaseweb_api_key FROM ip_addresses a JOIN ip_pools p ON a.pool_id = p.id WHERE a.vps_id = ?',
+      [vps.id]
+    );
+    const { fetch } = await import('undici');
+    const results = await Promise.all(ips.map(async (ip) => {
+      if (!ip.leaseweb_api_key) return { ip: ip.ip_address, ptr: '', error: 'No Leaseweb API key on this pool' };
+      try {
+        const res  = await fetch(`https://api.leaseweb.com/ipMgmt/v2/ips/${ip.ip_address}`, { headers: { 'X-LSW-Auth': ip.leaseweb_api_key } });
+        const data = await res.json();
+        return { ip: ip.ip_address, ptr: data.reverseLookup || '' };
+      } catch { return { ip: ip.ip_address, ptr: '', error: 'API error' }; }
+    }));
+    return reply.send({ success: true, data: results });
+  });
+
+  fastify.put('/:id/rdns', async (req, reply) => {
+    const { ip, ptr } = req.body || {};
+    if (!ip || ptr === undefined) return reply.status(400).send({ success: false, error: 'ip and ptr required' });
+    const vps = await queryOne('SELECT * FROM vps WHERE id = ?', [req.params.id]);
+    if (!vps) return reply.status(404).send({ success: false, error: 'VPS not found' });
+    const ipRow = await queryOne(
+      'SELECT a.ip_address, p.leaseweb_api_key FROM ip_addresses a JOIN ip_pools p ON a.pool_id = p.id WHERE a.ip_address = ? AND a.vps_id = ?',
+      [ip, vps.id]
+    );
+    if (!ipRow) return reply.status(404).send({ success: false, error: 'IP not found on this VPS' });
+    if (!ipRow.leaseweb_api_key) return reply.status(422).send({ success: false, error: 'No Leaseweb API key configured for this IP pool' });
+    const { fetch } = await import('undici');
+    const res = await fetch(`https://api.leaseweb.com/ipMgmt/v2/ips/${ip}`, {
+      method: 'PUT',
+      headers: { 'X-LSW-Auth': ipRow.leaseweb_api_key, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ reverseLookup: ptr }),
+    });
+    if (!res.ok) return reply.status(422).send({ success: false, error: `Leaseweb API error: HTTP ${res.status}` });
+    await logAction(req.user.id, 'vps_rdns_updated', 'vps', vps.id, { ip, ptr }, req.ip);
+    return reply.send({ success: true });
+  });
+
   fastify.get('/:id/console', async (req, reply) => {
     const vps = await queryOne('SELECT v.*, n.*, v.type as type FROM vps v JOIN nodes n ON v.node_id = n.id WHERE v.id = ?', [req.params.id]);
     if (!vps) return reply.status(404).send({ success: false, error: 'VPS not found' });

@@ -39,6 +39,10 @@ export default function VPSDetail() {
   const [backups, setBackups] = useState([]);
   const [assignedIps, setAssignedIps] = useState([]);
   const [availableIps, setAvailableIps] = useState([]);
+  const [rdns, setRdns] = useState([]);
+  const [editingRdns, setEditingRdns] = useState(null);
+  const [rdnsValue, setRdnsValue] = useState('');
+  const [savingRdns, setSavingRdns] = useState(false);
   const [showIpModal, setShowIpModal] = useState(false);
   const [showReinstall, setShowReinstall] = useState(false);
   const [templates, setTemplates] = useState([]);
@@ -61,6 +65,29 @@ export default function VPSDetail() {
   const loadIps = async () => {
     const r = await adminAPI.getVpsIps(id);
     setAssignedIps(r.data.data);
+  };
+
+  const loadRdns = async () => {
+    try {
+      const r = await adminAPI.getVpsRdns(id);
+      setRdns(r.data.data || []);
+    } catch { setRdns([]); }
+  };
+
+  const startEditRdns = (entry) => {
+    setEditingRdns(entry.ip);
+    setRdnsValue(entry.ptr || '');
+  };
+
+  const saveRdns = async () => {
+    setSavingRdns(true);
+    try {
+      await adminAPI.updateVpsRdns(id, { ip: editingRdns, ptr: rdnsValue });
+      toast.success('PTR record updated');
+      setEditingRdns(null);
+      loadRdns();
+    } catch (e) { toast.error(e.response?.data?.error || 'Failed'); }
+    finally { setSavingRdns(false); }
   };
 
   const assignIp = async (ipId) => {
@@ -127,7 +154,7 @@ export default function VPSDetail() {
   };
 
   useEffect(() => { if (tab === 'backups') loadBackups(); }, [tab]);
-  useEffect(() => { loadIps(); }, [id]);
+  useEffect(() => { loadIps(); loadRdns(); }, [id]);
 
   if (!vps) return <div className="p-8 text-slate-500">Loading…</div>;
 
@@ -167,7 +194,7 @@ export default function VPSDetail() {
       </div>
 
       {tab === 'overview' && (
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6 items-start">
           <div className="bg-white rounded-xl border border-slate-200 p-6">
             <h3 className="font-semibold text-slate-900 mb-4">Specifications</h3>
             <dl className="space-y-3">
@@ -210,6 +237,51 @@ export default function VPSDetail() {
                 </div>
               ))}
             </dl>
+          </div>
+          <div className="bg-white rounded-xl border border-slate-200 p-6 md:col-span-2">
+            <h3 className="font-semibold text-slate-900 mb-4">rDNS / PTR Records</h3>
+            {rdns.length === 0 && (
+              <p className="text-sm text-slate-400">No IPs assigned or no Leaseweb API key configured on the pool.</p>
+            )}
+            <div className="space-y-3">
+              {rdns.map(entry => (
+                <div key={entry.ip} className="flex items-center gap-3">
+                  <span className="font-mono text-sm text-slate-700 w-36 shrink-0">{entry.ip}</span>
+                  {editingRdns === entry.ip ? (
+                    <>
+                      <input
+                        autoFocus
+                        value={rdnsValue}
+                        onChange={e => setRdnsValue(e.target.value)}
+                        placeholder="e.g. mail.example.com"
+                        className="flex-1 px-3 py-1.5 border border-indigo-300 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500 outline-none font-mono"
+                        onKeyDown={e => { if (e.key === 'Enter') saveRdns(); if (e.key === 'Escape') setEditingRdns(null); }}
+                      />
+                      <button onClick={saveRdns} disabled={savingRdns}
+                        className="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-xs font-medium disabled:opacity-40">
+                        {savingRdns ? 'Saving…' : 'Save'}
+                      </button>
+                      <button onClick={() => setEditingRdns(null)}
+                        className="px-3 py-1.5 border border-slate-200 rounded-lg text-xs text-slate-600 hover:bg-slate-50">
+                        Cancel
+                      </button>
+                    </>
+                  ) : (
+                    <>
+                      <span className={`flex-1 text-sm font-mono ${entry.error ? 'text-amber-500 italic' : entry.ptr ? 'text-slate-800' : 'text-slate-400'}`}>
+                        {entry.error || entry.ptr || 'not set'}
+                      </span>
+                      {!entry.error && (
+                        <button onClick={() => startEditRdns(entry)}
+                          className="px-3 py-1.5 border border-slate-200 rounded-lg text-xs text-slate-600 hover:bg-slate-50 hover:border-indigo-300">
+                          Edit
+                        </button>
+                      )}
+                    </>
+                  )}
+                </div>
+              ))}
+            </div>
           </div>
         </div>
       )}

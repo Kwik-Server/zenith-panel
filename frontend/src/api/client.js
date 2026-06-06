@@ -67,6 +67,8 @@ export const adminAPI = {
   getVpsIps:   (id)     => api.get(`/admin/vps/${id}/ips`),
   assignVpsIp: (id, d)  => api.post(`/admin/vps/${id}/ips`, d),
   removeVpsIp: (id, ipId) => api.delete(`/admin/vps/${id}/ips/${ipId}`),
+  getVpsRdns:  (id)     => api.get(`/admin/vps/${id}/rdns`),
+  updateVpsRdns:(id, d) => api.put(`/admin/vps/${id}/rdns`, d),
 
   // Users
   getUsers:    ()     => api.get('/admin/users'),
