@@ -50,72 +50,96 @@
   {/if}
 
   {* Power Controls *}
-  <div style="border-top:1px solid rgba(255,255,255,0.07);padding-top:14px;margin-bottom:16px;">
-    <div style="font-size:11px;color:#64748b;text-transform:uppercase;letter-spacing:.06em;font-weight:600;margin-bottom:10px;">Power Controls</div>
-    <div style="display:flex;gap:8px;flex-wrap:wrap;">
+  <div style="border-top:1px solid rgba(255,255,255,0.07);padding-top:16px;margin-bottom:16px;">
+    <div style="font-size:11px;color:#475569;text-transform:uppercase;letter-spacing:.08em;font-weight:700;margin-bottom:12px;">Power Controls</div>
+    <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px;">
 
-      {if $status_raw == 'stopped' || $status_raw == 'suspended' || $status_raw == 'error'}
+      {* Start *}
       <form method="post" action="clientarea.php" style="margin:0;">
         <input type="hidden" name="token"         value="{$whmcs_token}" />
         <input type="hidden" name="action"        value="productdetails" />
         <input type="hidden" name="id"            value="{$serviceid}" />
         <input type="hidden" name="zenith_action" value="start" />
-        <button type="submit" style="padding:8px 16px;background:#16a34a;border:none;border-radius:8px;color:#fff;font-size:13px;font-weight:600;cursor:pointer;">
-          &#9654; Start
+        <button type="submit"
+          {if $status_raw != 'stopped' && $status_raw != 'suspended' && $status_raw != 'error'}disabled{/if}
+          style="width:100%;padding:10px 8px;border:1px solid {if $status_raw == 'stopped' || $status_raw == 'suspended' || $status_raw == 'error'}rgba(34,197,94,0.4){else}rgba(255,255,255,0.08){/if};border-radius:10px;background:{if $status_raw == 'stopped' || $status_raw == 'suspended' || $status_raw == 'error'}rgba(34,197,94,0.15){else}rgba(255,255,255,0.04){/if};color:{if $status_raw == 'stopped' || $status_raw == 'suspended' || $status_raw == 'error'}#4ade80{else}#334155{/if};font-size:13px;font-weight:600;cursor:{if $status_raw == 'stopped' || $status_raw == 'suspended' || $status_raw == 'error'}pointer{else}not-allowed{/if};display:flex;align-items:center;justify-content:center;gap:6px;box-sizing:border-box;transition:all .15s;">
+          <span style="font-size:15px;">&#9654;</span> Start
         </button>
       </form>
-      {/if}
 
-      {if $status_raw == 'running'}
+      {* Stop *}
       <form method="post" action="clientarea.php" style="margin:0;">
         <input type="hidden" name="token"         value="{$whmcs_token}" />
         <input type="hidden" name="action"        value="productdetails" />
         <input type="hidden" name="id"            value="{$serviceid}" />
         <input type="hidden" name="zenith_action" value="stop" />
-        <button type="submit" onclick="return confirm('Stop this VPS?')"
-          style="padding:8px 16px;background:#475569;border:none;border-radius:8px;color:#fff;font-size:13px;font-weight:600;cursor:pointer;">
-          &#9646;&#9646; Stop
+        <button type="submit"
+          {if $status_raw != 'running'}disabled{/if}
+          onclick="{if $status_raw == 'running'}return confirm('Stop this VPS?'){/if}"
+          style="width:100%;padding:10px 8px;border:1px solid {if $status_raw == 'running'}rgba(248,113,113,0.4){else}rgba(255,255,255,0.08){/if};border-radius:10px;background:{if $status_raw == 'running'}rgba(239,68,68,0.12){else}rgba(255,255,255,0.04){/if};color:{if $status_raw == 'running'}#f87171{else}#334155{/if};font-size:13px;font-weight:600;cursor:{if $status_raw == 'running'}pointer{else}not-allowed{/if};display:flex;align-items:center;justify-content:center;gap:6px;box-sizing:border-box;transition:all .15s;">
+          <span style="font-size:15px;">&#9646;&#9646;</span> Stop
         </button>
       </form>
+
+      {* Restart *}
       <form method="post" action="clientarea.php" style="margin:0;">
         <input type="hidden" name="token"         value="{$whmcs_token}" />
         <input type="hidden" name="action"        value="productdetails" />
         <input type="hidden" name="id"            value="{$serviceid}" />
         <input type="hidden" name="zenith_action" value="restart" />
-        <button type="submit" onclick="return confirm('Restart this VPS?')"
-          style="padding:8px 16px;background:#2563eb;border:none;border-radius:8px;color:#fff;font-size:13px;font-weight:600;cursor:pointer;">
-          &#8635; Restart
+        <button type="submit"
+          {if $status_raw != 'running'}disabled{/if}
+          onclick="{if $status_raw == 'running'}return confirm('Restart this VPS?'){/if}"
+          style="width:100%;padding:10px 8px;border:1px solid {if $status_raw == 'running'}rgba(99,102,241,0.4){else}rgba(255,255,255,0.08){/if};border-radius:10px;background:{if $status_raw == 'running'}rgba(99,102,241,0.12){else}rgba(255,255,255,0.04){/if};color:{if $status_raw == 'running'}#818cf8{else}#334155{/if};font-size:13px;font-weight:600;cursor:{if $status_raw == 'running'}pointer{else}not-allowed{/if};display:flex;align-items:center;justify-content:center;gap:6px;box-sizing:border-box;transition:all .15s;">
+          <span style="font-size:15px;">&#8635;</span> Restart
         </button>
       </form>
-      {/if}
-
-      {if $status_raw != 'running' && $status_raw != 'stopped' && $status_raw != 'suspended' && $status_raw != 'error'}
-      <span style="font-size:13px;color:#64748b;padding:8px 0;">
-        &#8987; VPS is {$status} — power controls unavailable
-      </span>
-      {/if}
 
     </div>
+    {if $status_raw != 'running' && $status_raw != 'stopped' && $status_raw != 'suspended' && $status_raw != 'error'}
+    <p style="margin:8px 0 0;font-size:12px;color:#475569;text-align:center;">VPS is {$status} — please wait</p>
+    {/if}
   </div>
 
   {* Reinstall OS *}
   {if $status_raw == 'running' || $status_raw == 'stopped'}
-  <div style="border-top:1px solid rgba(255,255,255,0.07);padding-top:14px;margin-bottom:16px;">
-    <div style="font-size:11px;color:#64748b;text-transform:uppercase;letter-spacing:.06em;font-weight:600;margin-bottom:6px;">Reinstall OS</div>
-    <div style="font-size:12px;color:#ef4444;margin-bottom:8px;">&#9888; This will erase all data on the VPS.</div>
+  <div style="border-top:1px solid rgba(255,255,255,0.07);padding-top:16px;margin-bottom:16px;">
+    <div style="font-size:11px;color:#475569;text-transform:uppercase;letter-spacing:.08em;font-weight:700;margin-bottom:4px;">Reinstall OS</div>
+    <div style="font-size:12px;color:#64748b;margin-bottom:12px;">Wipes all data and reinstalls the selected OS.</div>
     <form method="post" action="clientarea.php">
       <input type="hidden" name="token"         value="{$whmcs_token}" />
       <input type="hidden" name="action"        value="productdetails" />
       <input type="hidden" name="id"            value="{$serviceid}" />
       <input type="hidden" name="zenith_action" value="reinstall" />
-      <div style="display:flex;gap:8px;">
-        <input type="password" name="reinstall_password" placeholder="New root password (min 8 chars)"
-          style="flex:1;background:rgba(255,255,255,0.07);border:1px solid rgba(255,255,255,0.12);border-radius:8px;padding:8px 10px;color:#f1f5f9;font-size:12px;outline:none;box-sizing:border-box;" />
-        <button type="submit" onclick="return confirm('This will ERASE all data and reinstall the OS. Are you sure?')"
-          style="padding:8px 16px;background:#b91c1c;border:none;border-radius:8px;color:#fff;font-size:12px;font-weight:600;cursor:pointer;white-space:nowrap;">
-          Reinstall
-        </button>
+
+      {if $templates_list}
+      <div style="margin-bottom:10px;">
+        <label style="display:block;font-size:11px;color:#64748b;margin-bottom:6px;font-weight:600;text-transform:uppercase;letter-spacing:.05em;">Operating System</label>
+        <div style="display:grid;grid-template-columns:repeat(2,1fr);gap:6px;">
+          <label style="display:flex;align-items:center;gap:8px;padding:8px 10px;border:1px solid rgba(255,255,255,0.1);border-radius:8px;cursor:pointer;background:rgba(255,255,255,0.03);">
+            <input type="radio" name="reinstall_template_id" value="0" checked style="accent-color:#6366f1;" />
+            <span style="font-size:12px;color:#94a3b8;">Keep current OS</span>
+          </label>
+          {foreach from=$templates_list item=tpl}
+          <label style="display:flex;align-items:center;gap:8px;padding:8px 10px;border:1px solid rgba(255,255,255,0.1);border-radius:8px;cursor:pointer;background:rgba(255,255,255,0.03);">
+            <input type="radio" name="reinstall_template_id" value="{$tpl.id}" style="accent-color:#6366f1;" />
+            <span style="font-size:12px;color:#e2e8f0;">{$tpl.name}</span>
+          </label>
+          {/foreach}
+        </div>
       </div>
+      {/if}
+
+      <div style="margin-bottom:10px;">
+        <label style="display:block;font-size:11px;color:#64748b;margin-bottom:6px;font-weight:600;text-transform:uppercase;letter-spacing:.05em;">New Root Password</label>
+        <input type="password" name="reinstall_password" placeholder="Minimum 8 characters"
+          style="width:100%;background:rgba(255,255,255,0.07);border:1px solid rgba(255,255,255,0.12);border-radius:8px;padding:9px 12px;color:#f1f5f9;font-size:13px;outline:none;box-sizing:border-box;" />
+      </div>
+
+      <button type="submit" onclick="return confirm('This will ERASE all data and reinstall the OS. Are you absolutely sure?')"
+        style="width:100%;padding:11px;background:rgba(185,28,28,0.8);border:1px solid rgba(239,68,68,0.3);border-radius:10px;color:#fff;font-size:13px;font-weight:700;cursor:pointer;letter-spacing:.02em;">
+        &#9888; Reinstall Now
+      </button>
     </form>
   </div>
   {/if}

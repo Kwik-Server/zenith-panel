@@ -295,13 +295,16 @@ function _zenith_clientarea_render(array $params, string $actionMessage = '', st
     $serverInfo = null;
     $ipAddress  = $params['model']->dedicatedip ?? '';
     $osName     = $params['customfields']['Operating System'] ?? 'Linux VPS';
-    $error      = '';
     $rdnsList   = [];
+    $templatesList = [];
+    $vpsType    = 'kvm';
 
     if ($uuid) {
         try {
-            $data   = _zenith_api($params)->getStatus($uuid);
+            $api    = _zenith_api($params);
+            $data   = $api->getStatus($uuid);
             $status = ucfirst($data['status'] ?? 'unknown');
+            $vpsType = $data['type'] ?? 'kvm';
             if (!empty($data['cpu'])) {
                 $serverInfo = [
                     'cpu'  => $data['cpu'] . ' vCPU',
@@ -310,11 +313,13 @@ function _zenith_clientarea_render(array $params, string $actionMessage = '', st
                 ];
             }
             if (!empty($data['ip_address'])) $ipAddress = $data['ip_address'];
-        } catch (Exception $e) {
-            $error = 'Could not fetch VPS status.';
-        }
+        } catch (Exception $e) {}
 
         $rdnsList = _zenith_rdns_fetch($params, $uuid);
+
+        try {
+            $templatesList = _zenith_api($params)->getTemplates($vpsType);
+        } catch (Exception $e) {}
     }
 
     try {
@@ -355,6 +360,7 @@ function _zenith_clientarea_render(array $params, string $actionMessage = '', st
             'ram'          => $serverInfo['ram'] ?? '',
             'disk'         => $serverInfo['disk'] ?? '',
             'rdns_list'      => $rdnsList,
+            'templates_list' => $templatesList,
             'action_message' => $actionMessage,
             'action_error'   => $actionError,
             'serviceid'      => $params['serviceid'],
@@ -410,14 +416,15 @@ function zenith_ClientArea(array $params): array {
             } catch (Exception $e) { $actionError = $e->getMessage(); }
 
         } elseif ($zenithAction === 'reinstall') {
-            $password = trim($_POST['reinstall_password'] ?? '');
+            $password   = trim($_POST['reinstall_password']   ?? '');
+            $templateId = (int)($_POST['reinstall_template_id'] ?? 0);
             if (strlen($password) < 8) {
                 $actionError = 'Password must be at least 8 characters.';
             } else {
                 try {
-                    $api->reinstall($uuid, $password);
+                    $api->reinstall($uuid, $password, $templateId);
                     $actionMessage = 'Reinstall queued. Your VPS will be ready in a few minutes.';
-                    logActivity("Zenith: Client reinstalled VPS {$uuid}", $params['userid']);
+                    logActivity("Zenith: Client reinstalled VPS {$uuid}" . ($templateId ? " (template {$templateId})" : ''), $params['userid']);
                 } catch (Exception $e) { $actionError = $e->getMessage(); }
             }
         }

@@ -11,6 +11,14 @@ export default async function whmcsRoutes(fastify) {
     return reply.send({ success: true, data: { status: 'ok', version: '1.0.0' } });
   });
 
+  fastify.get('/templates', async (req, reply) => {
+    const { type } = req.query;
+    const rows = type
+      ? await query('SELECT id, name, type, os_family FROM templates WHERE is_active = 1 AND type = ? ORDER BY name', [type])
+      : await query('SELECT id, name, type, os_family FROM templates WHERE is_active = 1 ORDER BY name');
+    return reply.send({ success: true, data: rows });
+  });
+
   // Generate magic link token for auto-login
   fastify.post('/autologin', async (req, reply) => {
     const { user_email } = req.body || {};
@@ -138,13 +146,14 @@ export default async function whmcsRoutes(fastify) {
   });
 
   fastify.post('/:uuid/reinstall', async (req, reply) => {
-    const { root_password } = req.body || {};
+    const { root_password, template_id } = req.body || {};
     if (!root_password) return reply.status(400).send({ success: false, error: 'root_password required' });
     const vps = await queryOne('SELECT * FROM vps WHERE uuid = ?', [req.params.uuid]);
     if (!vps) return reply.status(404).send({ success: false, error: 'VPS not found' });
-    if (!vps.template_id) return reply.status(422).send({ success: false, error: 'No template set on this VPS — cannot reinstall' });
+    const tplId = template_id || vps.template_id;
+    if (!tplId) return reply.status(422).send({ success: false, error: 'No template set — select an OS to reinstall' });
     const task = await query('INSERT INTO tasks (vps_id, type, status) VALUES (?, "reinstall_vps", "pending")', [vps.id]);
-    await addVpsJob('reinstall_vps', { vpsId: vps.id, taskId: task.insertId, root_password });
+    await addVpsJob('reinstall_vps', { vpsId: vps.id, taskId: task.insertId, root_password, template_id: tplId });
     return reply.status(202).send({ success: true, message: 'Reinstall queued' });
   });
 
@@ -222,7 +231,7 @@ export default async function whmcsRoutes(fastify) {
     if (!vps) return reply.status(404).send({ success: false, error: 'VPS not found' });
     return reply.send({ success: true, data: {
       uuid: vps.uuid, status: vps.status, hostname: vps.hostname,
-      ip_address: vps.ip_address, cpu: vps.cpu, ram: vps.ram, disk: vps.disk
+      ip_address: vps.ip_address, cpu: vps.cpu, ram: vps.ram, disk: vps.disk, type: vps.type
     }});
   });
 }

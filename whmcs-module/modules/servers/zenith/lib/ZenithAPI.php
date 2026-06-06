@@ -25,8 +25,15 @@ class ZenithAPI {
         return $this->request('POST', "/whmcs/{$uuid}/restart");
     }
 
-    public function reinstall(string $uuid, string $password): array {
-        return $this->request('POST', "/whmcs/{$uuid}/reinstall", ['root_password' => $password]);
+    public function reinstall(string $uuid, string $password, int $templateId = 0): array {
+        $data = ['root_password' => $password];
+        if ($templateId) $data['template_id'] = $templateId;
+        return $this->request('POST', "/whmcs/{$uuid}/reinstall", $data);
+    }
+
+    public function getTemplates(string $type = ''): array {
+        $qs = $type ? "?type={$type}" : '';
+        return $this->request('GET', "/whmcs/templates{$qs}");
     }
 
     public function suspend(string $uuid): array {
