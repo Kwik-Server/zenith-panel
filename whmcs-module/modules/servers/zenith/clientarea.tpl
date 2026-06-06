@@ -115,18 +115,12 @@
       {if $templates_list}
       <div style="margin-bottom:10px;">
         <label style="display:block;font-size:11px;color:#64748b;margin-bottom:6px;font-weight:600;text-transform:uppercase;letter-spacing:.05em;">Operating System</label>
-        <div style="display:flex;flex-direction:column;gap:5px;max-height:220px;overflow-y:auto;padding-right:2px;">
-          <label style="display:flex;align-items:center;gap:10px;padding:9px 12px;border:1px solid rgba(255,255,255,0.08);border-radius:8px;cursor:pointer;background:rgba(255,255,255,0.03);">
-            <input type="radio" name="reinstall_template_id" value="0" checked style="accent-color:#6366f1;flex-shrink:0;" />
-            <span style="font-size:13px;color:#94a3b8;">Keep current OS</span>
-          </label>
+        <select name="reinstall_template_id" style="width:100%;background:#1e293b;border:1px solid rgba(255,255,255,0.12);border-radius:8px;padding:9px 12px;color:#e2e8f0;font-size:13px;outline:none;box-sizing:border-box;cursor:pointer;">
+          <option value="0" style="background:#1e293b;">— Keep current OS —</option>
           {foreach from=$templates_list item=tpl}
-          <label style="display:flex;align-items:center;gap:10px;padding:9px 12px;border:1px solid rgba(255,255,255,0.08);border-radius:8px;cursor:pointer;background:rgba(255,255,255,0.03);">
-            <input type="radio" name="reinstall_template_id" value="{$tpl.id}" style="accent-color:#6366f1;flex-shrink:0;" />
-            <span style="font-size:13px;color:#e2e8f0;">{$tpl.name}</span>
-          </label>
+          <option value="{$tpl.id}" style="background:#1e293b;">{$tpl.name}</option>
           {/foreach}
-        </div>
+        </select>
       </div>
       {/if}
 
