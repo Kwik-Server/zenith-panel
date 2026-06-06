@@ -211,6 +211,19 @@ export default function VPSDetail() {
                   <dd className="font-medium text-slate-900">{v}</dd>
                 </div>
               ))}
+              <div className="flex justify-between text-sm items-center">
+                <dt className="text-slate-500">UUID</dt>
+                <dd className="flex items-center gap-1.5">
+                  <span className="font-mono text-xs text-slate-700 truncate max-w-[180px]" title={vps.uuid}>{vps.uuid}</span>
+                  <button
+                    onClick={() => { navigator.clipboard.writeText(vps.uuid); toast.success('UUID copied'); }}
+                    className="text-slate-400 hover:text-indigo-600 transition-colors"
+                    title="Copy UUID"
+                  >
+                    <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+                  </button>
+                </dd>
+              </div>
             </dl>
           </div>
           <div className="bg-white rounded-xl border border-slate-200 p-6">
