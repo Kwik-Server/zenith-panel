@@ -60,12 +60,11 @@
       </div>
       {if !$entry.error}
       <form method="post" action="clientarea.php" style="display:flex;gap:8px;">
-        <input type="hidden" name="token"     value="{$token}" />
-        <input type="hidden" name="action"    value="productdetails" />
-        <input type="hidden" name="id"        value="{$serviceid}" />
-        <input type="hidden" name="modop"     value="custom" />
-        <input type="hidden" name="a"         value="UpdateRdns" />
-        <input type="hidden" name="rdns_ip"   value="{$entry.ip}" />
+        <input type="hidden" name="token"        value="{$whmcs_token}" />
+        <input type="hidden" name="action"       value="productdetails" />
+        <input type="hidden" name="id"           value="{$serviceid}" />
+        <input type="hidden" name="zenith_action" value="update_rdns" />
+        <input type="hidden" name="rdns_ip"      value="{$entry.ip}" />
         <input type="text"   name="rdns_ptr"  value="{$entry.ptr}"
           placeholder="e.g. mail.example.com"
           style="flex:1;background:rgba(255,255,255,0.07);border:1px solid rgba(255,255,255,0.12);border-radius:8px;padding:8px 10px;color:#f1f5f9;font-size:12px;font-family:monospace;outline:none;box-sizing:border-box;" />

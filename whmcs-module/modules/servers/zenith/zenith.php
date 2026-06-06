@@ -276,31 +276,6 @@ function zenith_AdminLink(array $params): string {
     return "<a href=\"{$scheme}://{$host}/admin\" target=\"_blank\" class=\"btn btn-default\">Open Zenith Admin</a>";
 }
 
-function zenith_ClientAreaAllowedFunctions(): array {
-    return ['UpdateRdns' => 'Update rDNS/PTR'];
-}
-
-function zenith_UpdateRdns(array $params): array {
-    $uuid = _zenith_getuuid($params);
-    $ip   = trim($_POST['rdns_ip']  ?? '');
-    $ptr  = trim($_POST['rdns_ptr'] ?? '');
-
-    $rdnsMessage = '';
-    $rdnsError   = '';
-
-    if ($uuid && $ip) {
-        try {
-            _zenith_api($params)->updateRdns($uuid, $ip, $ptr);
-            $rdnsMessage = "PTR record for {$ip} updated" . ($ptr ? " → {$ptr}" : ' (cleared)');
-            logActivity("Zenith: Client updated PTR for {$ip} on VPS {$uuid} → " . ($ptr ?: '(cleared)'), $params['userid']);
-        } catch (Exception $e) {
-            $rdnsError = $e->getMessage();
-        }
-    }
-
-    // Re-render the full client area with the result message
-    return _zenith_clientarea_render($params, $rdnsMessage, $rdnsError);
-}
 
 function _zenith_rdns_fetch(array $params, string $uuid): array {
     try {
@@ -357,6 +332,14 @@ function _zenith_clientarea_render(array $params, string $rdnsMessage = '', stri
     $statusLower = strtolower($status);
     $s = $statusMap[$statusLower] ?? ['bg' => 'rgba(100,116,139,0.15)', 'color' => '#64748b', 'dot' => '&#8212;'];
 
+    // Get WHMCS session token explicitly so template doesn't rely on global Smarty var
+    $whmcsToken = '';
+    try {
+        $whmcsToken = \WHMCS\Session::get('token') ?? '';
+    } catch (\Exception $e) {
+        $whmcsToken = $_SESSION['token'] ?? '';
+    }
+
     return [
         'templatefile' => 'clientarea',
         'vars' => [
@@ -375,10 +358,41 @@ function _zenith_clientarea_render(array $params, string $rdnsMessage = '', stri
             'rdns_message' => $rdnsMessage,
             'rdns_error'   => $rdnsError,
             'serviceid'    => $params['serviceid'],
+            'whmcs_token'  => $whmcsToken,
         ],
     ];
 }
 
 function zenith_ClientArea(array $params): array {
-    return _zenith_clientarea_render($params);
+    $rdnsMessage = '';
+    $rdnsError   = '';
+
+    // Handle rDNS form submission directly — avoids WHMCS module routing entirely
+    if (
+        $_SERVER['REQUEST_METHOD'] === 'POST' &&
+        ($_POST['zenith_action'] ?? '') === 'update_rdns'
+    ) {
+        $uuid = _zenith_getuuid($params);
+        $ip   = trim($_POST['rdns_ip']  ?? '');
+        $ptr  = trim($_POST['rdns_ptr'] ?? '');
+
+        if (!$uuid) {
+            $rdnsError = 'VPS not provisioned yet.';
+        } elseif (!$ip) {
+            $rdnsError = 'IP address missing from request.';
+        } else {
+            try {
+                _zenith_api($params)->updateRdns($uuid, $ip, $ptr);
+                $rdnsMessage = "PTR for {$ip} updated" . ($ptr ? " → {$ptr}" : ' (cleared)');
+                logActivity(
+                    "Zenith: Client updated PTR for {$ip} on VPS {$uuid} → " . ($ptr ?: '(cleared)'),
+                    $params['userid']
+                );
+            } catch (Exception $e) {
+                $rdnsError = $e->getMessage();
+            }
+        }
+    }
+
+    return _zenith_clientarea_render($params, $rdnsMessage, $rdnsError);
 }
