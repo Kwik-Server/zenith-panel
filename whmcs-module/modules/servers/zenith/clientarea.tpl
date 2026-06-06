@@ -60,6 +60,7 @@
       </div>
       {if !$entry.error}
       <form method="post" action="clientarea.php" style="display:flex;gap:8px;">
+        <input type="hidden" name="token"     value="{$token}" />
         <input type="hidden" name="action"    value="productdetails" />
         <input type="hidden" name="id"        value="{$serviceid}" />
         <input type="hidden" name="modop"     value="custom" />
