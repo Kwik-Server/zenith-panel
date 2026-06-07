@@ -13,6 +13,8 @@ export default async function userRoutes(fastify) {
   fastify.post('/', async (req, reply) => {
     const { email, password, first_name, last_name, role } = req.body || {};
     if (!email || !password) return reply.status(400).send({ success: false, error: 'email and password required' });
+    const existing = await queryOne('SELECT id FROM users WHERE email = ?', [email]);
+    if (existing) return reply.status(409).send({ success: false, error: `A user with email ${email} already exists` });
     const hash = await bcrypt.hash(password, 12);
     const r = await query('INSERT INTO users (email, password, first_name, last_name, role) VALUES (?, ?, ?, ?, ?)',
       [email, hash, first_name || '', last_name || '', role || 'client']);
