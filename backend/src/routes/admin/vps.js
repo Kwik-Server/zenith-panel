@@ -352,6 +352,63 @@ export default async function vpsRoutes(fastify) {
     return reply.send({ success: true });
   });
 
+  // Firewall management
+  fastify.get('/:id/firewall', async (req, reply) => {
+    const vps = await queryOne('SELECT v.*, n.* FROM vps v JOIN nodes n ON v.node_id = n.id WHERE v.id = ?', [req.params.id]);
+    if (!vps || !vps.proxmox_vmid) return reply.status(404).send({ success: false, error: 'VPS not found or not provisioned' });
+    const node = await queryOne('SELECT * FROM nodes WHERE id = ?', [vps.node_id]);
+    try {
+      const [rules, options] = await Promise.all([
+        proxmox.getFirewallRules(node, vps.proxmox_vmid, vps.type),
+        proxmox.getFirewallOptions(node, vps.proxmox_vmid, vps.type),
+      ]);
+      return reply.send({ success: true, data: { rules: rules || [], options: options || {} } });
+    } catch (err) { return reply.status(422).send({ success: false, error: err.message }); }
+  });
+
+  fastify.post('/:id/firewall', async (req, reply) => {
+    const vps = await queryOne('SELECT v.*, n.* FROM vps v JOIN nodes n ON v.node_id = n.id WHERE v.id = ?', [req.params.id]);
+    if (!vps || !vps.proxmox_vmid) return reply.status(404).send({ success: false, error: 'VPS not found or not provisioned' });
+    const node = await queryOne('SELECT * FROM nodes WHERE id = ?', [vps.node_id]);
+    try {
+      await proxmox.addFirewallRule(node, vps.proxmox_vmid, req.body, vps.type);
+      await logAction(req.user.id, 'vps_firewall_rule_added', 'vps', vps.id, req.body, req.ip);
+      return reply.send({ success: true });
+    } catch (err) { return reply.status(422).send({ success: false, error: err.message }); }
+  });
+
+  fastify.put('/:id/firewall/:pos', async (req, reply) => {
+    const vps = await queryOne('SELECT v.*, n.* FROM vps v JOIN nodes n ON v.node_id = n.id WHERE v.id = ?', [req.params.id]);
+    if (!vps || !vps.proxmox_vmid) return reply.status(404).send({ success: false, error: 'VPS not found or not provisioned' });
+    const node = await queryOne('SELECT * FROM nodes WHERE id = ?', [vps.node_id]);
+    try {
+      await proxmox.updateFirewallRule(node, vps.proxmox_vmid, req.params.pos, req.body, vps.type);
+      return reply.send({ success: true });
+    } catch (err) { return reply.status(422).send({ success: false, error: err.message }); }
+  });
+
+  fastify.delete('/:id/firewall/:pos', async (req, reply) => {
+    const vps = await queryOne('SELECT v.*, n.* FROM vps v JOIN nodes n ON v.node_id = n.id WHERE v.id = ?', [req.params.id]);
+    if (!vps || !vps.proxmox_vmid) return reply.status(404).send({ success: false, error: 'VPS not found or not provisioned' });
+    const node = await queryOne('SELECT * FROM nodes WHERE id = ?', [vps.node_id]);
+    try {
+      await proxmox.deleteFirewallRule(node, vps.proxmox_vmid, req.params.pos, vps.type);
+      await logAction(req.user.id, 'vps_firewall_rule_deleted', 'vps', vps.id, { pos: req.params.pos }, req.ip);
+      return reply.send({ success: true });
+    } catch (err) { return reply.status(422).send({ success: false, error: err.message }); }
+  });
+
+  fastify.put('/:id/firewall-options', async (req, reply) => {
+    const vps = await queryOne('SELECT v.*, n.* FROM vps v JOIN nodes n ON v.node_id = n.id WHERE v.id = ?', [req.params.id]);
+    if (!vps || !vps.proxmox_vmid) return reply.status(404).send({ success: false, error: 'VPS not found or not provisioned' });
+    const node = await queryOne('SELECT * FROM nodes WHERE id = ?', [vps.node_id]);
+    try {
+      await proxmox.setFirewallOptions(node, vps.proxmox_vmid, { ...req.body, policy_in: 'ACCEPT', policy_out: 'ACCEPT' }, vps.type);
+      await logAction(req.user.id, 'vps_firewall_options_updated', 'vps', vps.id, req.body, req.ip);
+      return reply.send({ success: true });
+    } catch (err) { return reply.status(422).send({ success: false, error: err.message }); }
+  });
+
   fastify.get('/:id/console', async (req, reply) => {
     const vps = await queryOne('SELECT v.*, n.*, v.type as type FROM vps v JOIN nodes n ON v.node_id = n.id WHERE v.id = ?', [req.params.id]);
     if (!vps) return reply.status(404).send({ success: false, error: 'VPS not found' });

@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useParams } from 'react-router-dom';
 import { adminAPI } from '../../api/client';
-import { Play, Square, RotateCcw, Zap, PauseCircle, Terminal, Plus, Trash2, RefreshCw, Network } from 'lucide-react';
+import { Play, Square, RotateCcw, Zap, PauseCircle, Terminal, Plus, Trash2, RefreshCw, Network, Shield, Pencil } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { useAuthStore } from '../../store/authStore';
 
@@ -47,6 +47,10 @@ export default function VPSDetail() {
   const [showReinstall, setShowReinstall] = useState(false);
   const [templates, setTemplates] = useState([]);
   const [reinstallForm, setReinstallForm] = useState({ template_id: '', root_password: '' });
+  const [firewall, setFirewall] = useState({ rules: [], options: {} });
+  const [showRuleModal, setShowRuleModal] = useState(false);
+  const [editingRule, setEditingRule] = useState(null);
+  const [ruleForm, setRuleForm] = useState({ type: 'in', action: 'ACCEPT', proto: 'tcp', dport: '', sport: '', source: '', dest: '', comment: '', enable: 1 });
 
   const load = () => adminAPI.getVpsDetail(id).then(r => setVps(r.data.data));
 
@@ -153,7 +157,45 @@ export default function VPSDetail() {
     } catch (e) { toast.error(e.response?.data?.error || 'Failed'); }
   };
 
+  const loadFirewall = () => adminAPI.getVpsFirewall(id).then(r => setFirewall(r.data.data)).catch(() => {});
+
+  const toggleFirewall = async (enabled) => {
+    try { await adminAPI.setVpsFirewallOptions(id, { enable: enabled ? 1 : 0 }); loadFirewall(); toast.success(enabled ? 'Firewall enabled' : 'Firewall disabled'); }
+    catch (e) { toast.error(e.response?.data?.error || 'Failed'); }
+  };
+
+  const openAddRule = () => {
+    setEditingRule(null);
+    setRuleForm({ type: 'in', action: 'ACCEPT', proto: 'tcp', dport: '', sport: '', source: '', dest: '', comment: '', enable: 1 });
+    setShowRuleModal(true);
+  };
+
+  const openEditRule = (rule) => {
+    setEditingRule(rule.pos);
+    setRuleForm({ type: rule.type || 'in', action: rule.action || 'ACCEPT', proto: rule.proto || 'tcp', dport: rule.dport || '', sport: rule.sport || '', source: rule.source || '', dest: rule.dest || '', comment: rule.comment || '', enable: rule.enable ?? 1 });
+    setShowRuleModal(true);
+  };
+
+  const saveRule = async () => {
+    const payload = {};
+    Object.entries(ruleForm).forEach(([k, v]) => { if (v !== '') payload[k] = v; });
+    try {
+      if (editingRule !== null) await adminAPI.updateVpsFirewallRule(id, editingRule, payload);
+      else await adminAPI.addVpsFirewallRule(id, payload);
+      toast.success(editingRule !== null ? 'Rule updated' : 'Rule added');
+      setShowRuleModal(false);
+      loadFirewall();
+    } catch (e) { toast.error(e.response?.data?.error || 'Failed'); }
+  };
+
+  const deleteRule = async (pos) => {
+    if (!window.confirm('Delete this rule?')) return;
+    try { await adminAPI.deleteVpsFirewallRule(id, pos); toast.success('Rule deleted'); loadFirewall(); }
+    catch (e) { toast.error(e.response?.data?.error || 'Failed'); }
+  };
+
   useEffect(() => { if (tab === 'backups') loadBackups(); }, [tab]);
+  useEffect(() => { if (tab === 'firewall') loadFirewall(); }, [tab]);
   useEffect(() => { loadIps(); loadRdns(); }, [id]);
 
   if (!vps) return <div className="p-8 text-slate-500">Loading…</div>;
@@ -185,7 +227,7 @@ export default function VPSDetail() {
       </div>
 
       <div className="flex gap-1 mb-6 border-b border-slate-200">
-        {['overview','console','backups'].map(t => (
+        {['overview','console','firewall','backups'].map(t => (
           <button key={t} onClick={() => setTab(t)}
             className={`px-4 py-2 text-sm font-medium capitalize border-b-2 -mb-px transition-colors ${tab === t ? 'border-indigo-600 text-indigo-600' : 'border-transparent text-slate-500 hover:text-slate-700'}`}>
             {t}
@@ -294,6 +336,115 @@ export default function VPSDetail() {
                   )}
                 </div>
               ))}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {tab === 'firewall' && (
+        <div className="space-y-4">
+          <div className="bg-white rounded-xl border border-slate-200 p-4 flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <Shield size={20} className={firewall.options.enable ? 'text-green-600' : 'text-slate-400'} />
+              <div>
+                <p className="font-medium text-slate-900">Firewall</p>
+                <p className="text-xs text-slate-500">{firewall.options.enable ? 'Active — rules are enforced' : 'Inactive — all traffic allowed'}</p>
+              </div>
+            </div>
+            <button onClick={() => toggleFirewall(!firewall.options.enable)}
+              className={`px-4 py-1.5 rounded-lg text-sm font-medium transition-colors ${firewall.options.enable ? 'bg-slate-100 text-slate-700 hover:bg-slate-200' : 'bg-green-600 text-white hover:bg-green-700'}`}>
+              {firewall.options.enable ? 'Disable' : 'Enable'}
+            </button>
+          </div>
+
+          <div className="bg-white rounded-xl border border-slate-200 overflow-hidden">
+            <div className="p-4 border-b border-slate-100 flex items-center justify-between">
+              <h3 className="font-semibold text-slate-900">Rules</h3>
+              <button onClick={openAddRule} className="flex items-center gap-1.5 bg-indigo-600 hover:bg-indigo-700 text-white px-3 py-1.5 rounded-lg text-xs font-medium">
+                <Plus size={13}/> Add Rule
+              </button>
+            </div>
+            {firewall.rules.length === 0
+              ? <p className="p-6 text-center text-slate-400 text-sm">No rules yet. Add a rule to control traffic.</p>
+              : <table className="w-full text-sm">
+                  <thead className="bg-slate-50 text-xs font-semibold text-slate-500 uppercase">
+                    <tr>{['#','Dir','Action','Proto','Dest Port','Src Port','Source','Dest','Comment',''].map(h => <th key={h} className="px-3 py-2 text-left">{h}</th>)}</tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100">
+                    {firewall.rules.map((r, i) => (
+                      <tr key={i} className={`hover:bg-slate-50 ${!r.enable ? 'opacity-50' : ''}`}>
+                        <td className="px-3 py-2 text-slate-400">{r.pos}</td>
+                        <td className="px-3 py-2"><span className={`px-1.5 py-0.5 rounded text-xs font-medium ${r.type==='in'?'bg-blue-100 text-blue-700':'bg-purple-100 text-purple-700'}`}>{r.type?.toUpperCase()}</span></td>
+                        <td className="px-3 py-2"><span className={`px-1.5 py-0.5 rounded text-xs font-medium ${r.action==='ACCEPT'?'bg-green-100 text-green-700':r.action==='DROP'?'bg-red-100 text-red-700':'bg-amber-100 text-amber-700'}`}>{r.action}</span></td>
+                        <td className="px-3 py-2 font-mono text-slate-700">{r.proto || 'any'}</td>
+                        <td className="px-3 py-2 font-mono text-slate-700">{r.dport || '—'}</td>
+                        <td className="px-3 py-2 font-mono text-slate-700">{r.sport || '—'}</td>
+                        <td className="px-3 py-2 font-mono text-slate-700">{r.source || '—'}</td>
+                        <td className="px-3 py-2 font-mono text-slate-700">{r.dest || '—'}</td>
+                        <td className="px-3 py-2 text-slate-500 text-xs">{r.comment || '—'}</td>
+                        <td className="px-3 py-2">
+                          <div className="flex gap-1">
+                            <button onClick={() => openEditRule(r)} className="p-1 text-slate-400 hover:text-indigo-600"><Pencil size={13}/></button>
+                            <button onClick={() => deleteRule(r.pos)} className="p-1 text-slate-400 hover:text-red-600"><Trash2 size={13}/></button>
+                          </div>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+            }
+          </div>
+        </div>
+      )}
+
+      {showRuleModal && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-2xl p-6 w-full max-w-lg max-h-[90vh] overflow-y-auto">
+            <h2 className="text-lg font-bold text-slate-900 mb-4">{editingRule !== null ? 'Edit Rule' : 'Add Firewall Rule'}</h2>
+            <div className="space-y-3">
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-medium text-slate-600 mb-1">Direction</label>
+                  <select value={ruleForm.type} onChange={e => setRuleForm(f => ({...f, type: e.target.value}))} className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm outline-none">
+                    <option value="in">Inbound (in)</option>
+                    <option value="out">Outbound (out)</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-slate-600 mb-1">Action</label>
+                  <select value={ruleForm.action} onChange={e => setRuleForm(f => ({...f, action: e.target.value}))} className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm outline-none">
+                    <option value="ACCEPT">ACCEPT</option>
+                    <option value="DROP">DROP</option>
+                    <option value="REJECT">REJECT</option>
+                  </select>
+                </div>
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-slate-600 mb-1">Protocol</label>
+                <select value={ruleForm.proto} onChange={e => setRuleForm(f => ({...f, proto: e.target.value}))} className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm outline-none">
+                  <option value="tcp">TCP</option>
+                  <option value="udp">UDP</option>
+                  <option value="icmp">ICMP</option>
+                  <option value="">Any</option>
+                </select>
+              </div>
+              {[['dport','Destination Port(s)','e.g. 80, 443, 8000:9000'],['sport','Source Port(s)','e.g. 1024:65535'],['source','Source IP/CIDR','e.g. 192.168.1.0/24'],['dest','Destination IP/CIDR','e.g. 10.0.0.0/8'],['comment','Comment','Description for this rule']].map(([k, label, ph]) => (
+                <div key={k}>
+                  <label className="block text-xs font-medium text-slate-600 mb-1">{label}</label>
+                  <input type="text" value={ruleForm[k]} onChange={e => setRuleForm(f => ({...f, [k]: e.target.value}))} placeholder={ph}
+                    className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm outline-none focus:ring-2 focus:ring-indigo-500" />
+                </div>
+              ))}
+              <label className="flex items-center gap-2 text-sm text-slate-700 cursor-pointer">
+                <input type="checkbox" checked={ruleForm.enable === 1} onChange={e => setRuleForm(f => ({...f, enable: e.target.checked ? 1 : 0}))} />
+                Enable this rule
+              </label>
+            </div>
+            <div className="flex gap-3 mt-5">
+              <button onClick={() => setShowRuleModal(false)} className="flex-1 py-2 border border-slate-200 rounded-lg text-sm text-slate-600">Cancel</button>
+              <button onClick={saveRule} className="flex-1 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-sm font-medium">
+                {editingRule !== null ? 'Save Changes' : 'Add Rule'}
+              </button>
             </div>
           </div>
         </div>

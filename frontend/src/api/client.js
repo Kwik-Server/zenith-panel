@@ -69,6 +69,11 @@ export const adminAPI = {
   removeVpsIp: (id, ipId) => api.delete(`/admin/vps/${id}/ips/${ipId}`),
   getVpsRdns:  (id)     => api.get(`/admin/vps/${id}/rdns`),
   updateVpsRdns:(id, d) => api.put(`/admin/vps/${id}/rdns`, d),
+  getVpsFirewall:         (id)        => api.get(`/admin/vps/${id}/firewall`),
+  addVpsFirewallRule:     (id, d)     => api.post(`/admin/vps/${id}/firewall`, d),
+  updateVpsFirewallRule:  (id, pos, d)=> api.put(`/admin/vps/${id}/firewall/${pos}`, d),
+  deleteVpsFirewallRule:  (id, pos)   => api.delete(`/admin/vps/${id}/firewall/${pos}`),
+  setVpsFirewallOptions:  (id, d)     => api.put(`/admin/vps/${id}/firewall-options`, d),
 
   // Users
   getUsers:    ()     => api.get('/admin/users'),
