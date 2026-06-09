@@ -9,13 +9,19 @@ export default async function vpsRoutes(fastify) {
   fastify.addHook('preHandler', adminOnly);
 
   fastify.get('/', async (req, reply) => {
-    const { page = 1, limit = 20, status, node_id, user_id } = req.query;
+    const { page = 1, limit = 20, status, node_id, user_id, search } = req.query;
     const offset = (page - 1) * limit;
     let where = 'WHERE 1=1';
     const params = [];
     if (status)  { where += ' AND v.status = ?';  params.push(status); }
     if (node_id) { where += ' AND v.node_id = ?'; params.push(node_id); }
     if (user_id) { where += ' AND v.user_id = ?'; params.push(user_id); }
+    if (search) {
+      const like = `%${search}%`;
+      where += ` AND (v.hostname LIKE ? OR u.email LIKE ?
+                      OR EXISTS (SELECT 1 FROM ip_addresses WHERE vps_id = v.id AND ip_address LIKE ?))`;
+      params.push(like, like, like);
+    }
     const rows = await query(
       `SELECT v.*, u.email as user_email, n.name as node_name, p.name as plan_name,
               t.name as template_name,
@@ -28,7 +34,10 @@ export default async function vpsRoutes(fastify) {
        ${where} ORDER BY v.created_at DESC LIMIT ${parseInt(limit)} OFFSET ${parseInt(offset)}`,
       params
     );
-    const [{ total }] = await query(`SELECT COUNT(*) as total FROM vps v ${where}`, params);
+    const [{ total }] = await query(
+      `SELECT COUNT(*) as total FROM vps v JOIN users u ON v.user_id = u.id ${where}`,
+      params
+    );
     return reply.send({ success: true, data: { vps: rows, total, page: parseInt(page), limit: parseInt(limit) } });
   });
 

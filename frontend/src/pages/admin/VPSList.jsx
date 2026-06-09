@@ -211,34 +211,43 @@ function ImportModal({ onClose, onDone }) {
   );
 }
 
+const PAGE_SIZE = 20;
+
 export default function VPSList() {
-  const [vps, setVps] = useState([]);
-  const [search, setSearch] = useState('');
+  const [vps, setVps]         = useState([]);
+  const [total, setTotal]     = useState(0);
+  const [page, setPage]       = useState(1);
+  const [search, setSearch]   = useState('');
   const [loading, setLoading] = useState(true);
   const [deleting, setDeleting] = useState(null);
   const [showImport, setShowImport] = useState(false);
   const navigate = useNavigate();
 
-  const load = () => adminAPI.getVps().then(r => { setVps(r.data.data.vps || []); setLoading(false); });
+  const load = (p = page, q = search) => {
+    setLoading(true);
+    adminAPI.getVps({ page: p, limit: PAGE_SIZE, ...(q ? { search: q } : {}) })
+      .then(r => { setVps(r.data.data.vps || []); setTotal(r.data.data.total || 0); setLoading(false); });
+  };
 
-  useEffect(() => { load(); }, []);
+  useEffect(() => { load(1, search); setPage(1); }, [search]);
+  useEffect(() => { load(page, search); }, [page]);
 
   const action = async (id, a, label) => {
-    try { await adminAPI.vpsAction(id, a); toast.success(`${label} queued`); load(); }
+    try { await adminAPI.vpsAction(id, a); toast.success(`${label} queued`); load(page, search); }
     catch (e) { toast.error(e.response?.data?.error || 'Failed'); }
   };
 
   const del = async (v) => {
     if (!window.confirm(`Delete ${v.hostname}? This is irreversible.`)) return;
     setDeleting(v.id);
-    try { await adminAPI.deleteVps(v.id); toast.success('Deletion queued'); load(); }
+    try { await adminAPI.deleteVps(v.id); toast.success('Deletion queued'); load(page, search); }
     catch (e) { toast.error(e.response?.data?.error || 'Failed'); }
     finally { setDeleting(null); }
   };
 
-  const filtered = vps.filter(v => v.hostname?.toLowerCase().includes(search.toLowerCase()) || v.ip_address?.includes(search) || v.user_email?.toLowerCase().includes(search.toLowerCase()));
+  const totalPages = Math.ceil(total / PAGE_SIZE);
 
-  if (loading) return <div className="p-8 text-slate-500">Loading…</div>;
+  if (loading && vps.length === 0) return <div className="p-8 text-slate-500">Loading…</div>;
 
   return (
     <div className="p-8">
@@ -269,7 +278,7 @@ export default function VPSList() {
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-100">
-            {filtered.map(v => (
+            {vps.map(v => (
               <tr key={v.id} className="hover:bg-slate-50">
                 <td className="px-4 py-3">
                   <div className="flex items-center gap-3">
@@ -297,9 +306,35 @@ export default function VPSList() {
                 </td>
               </tr>
             ))}
-            {!filtered.length && <tr><td colSpan={7} className="px-4 py-8 text-center text-slate-400 text-sm">No VPS found</td></tr>}
+            {!vps.length && !loading && <tr><td colSpan={7} className="px-4 py-8 text-center text-slate-400 text-sm">No VPS found</td></tr>}
           </tbody>
         </table>
+        {totalPages > 1 && (
+          <div className="flex items-center justify-between px-4 py-3 border-t border-slate-100 text-sm text-slate-500">
+            <span>{total} total · page {page} of {totalPages}</span>
+            <div className="flex items-center gap-1">
+              <button onClick={() => setPage(p => Math.max(1, p - 1))} disabled={page === 1}
+                className="px-3 py-1.5 rounded-lg border border-slate-200 hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed">
+                ← Prev
+              </button>
+              {Array.from({ length: totalPages }, (_, i) => i + 1)
+                .filter(n => n === 1 || n === totalPages || Math.abs(n - page) <= 1)
+                .reduce((acc, n, i, arr) => {
+                  if (i > 0 && n - arr[i - 1] > 1) acc.push('…');
+                  acc.push(n);
+                  return acc;
+                }, [])
+                .map((n, i) => n === '…'
+                  ? <span key={`e${i}`} className="px-2 text-slate-300">…</span>
+                  : <button key={n} onClick={() => setPage(n)} className={`px-3 py-1.5 rounded-lg border text-sm ${page === n ? 'bg-indigo-600 text-white border-indigo-600' : 'border-slate-200 hover:bg-slate-50'}`}>{n}</button>
+                )}
+              <button onClick={() => setPage(p => Math.min(totalPages, p + 1))} disabled={page === totalPages}
+                className="px-3 py-1.5 rounded-lg border border-slate-200 hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed">
+                Next →
+              </button>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );
