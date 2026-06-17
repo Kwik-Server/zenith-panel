@@ -56,6 +56,14 @@ class ZenithAPI {
         return $this->request('POST', '/whmcs/autologin', ['user_email' => $email]);
     }
 
+    public function getStats(string $uuid): array {
+        try {
+            return $this->request('GET', "/whmcs/{$uuid}/stats");
+        } catch (Exception $e) {
+            return [];
+        }
+    }
+
     public function getRdns(string $uuid): array {
         return $this->request('GET', "/whmcs/{$uuid}/rdns");
     }

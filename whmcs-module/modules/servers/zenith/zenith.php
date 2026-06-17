@@ -171,56 +171,135 @@ function zenith_TerminateAccount(array $params): string {
 function zenith_AdminServicesTabFields(array $params): array {
     $uuid = _zenith_getuuid($params);
     if (!$uuid) {
-        return ['Zenith Status' => 'VPS not yet provisioned'];
+        return ['Zenith Status' => 'VPS not yet provisioned — run Create first.'];
     }
+
     try {
         $api    = _zenith_api($params);
         $data   = $api->getStatus($uuid);
         $ip     = $data['ip_address'] ?? '';
         $status = ucfirst($data['status'] ?? 'unknown');
+        $statusLower = strtolower($data['status'] ?? '');
 
-        // Sync assigned IP into WHMCS dedicated IP field
         if ($ip && function_exists('localAPI')) {
-            localAPI('UpdateClientProduct', [
-                'serviceid'   => $params['serviceid'],
-                'dedicatedip' => $ip,
-            ]);
+            localAPI('UpdateClientProduct', ['serviceid' => $params['serviceid'], 'dedicatedip' => $ip]);
         }
 
-        $fields = [
-            'VPS Status'  => $status,
-            'Assigned IP' => $ip ?: 'Not yet assigned (provisioning in progress)',
-            'UUID'        => $uuid,
-        ];
+        $statusLabel = [
+            'running'     => '<span class="label label-success">● Running</span>',
+            'stopped'     => '<span class="label label-default">○ Stopped</span>',
+            'suspended'   => '<span class="label label-warning">⏸ Suspended</span>',
+            'creating'    => '<span class="label label-info">⟳ Creating</span>',
+            'error'       => '<span class="label label-danger">✕ Error</span>',
+        ][$statusLower] ?? "<span class=\"label label-default\">{$status}</span>";
 
-        // rDNS / PTR fields — one editable input per assigned IP
+        $isRunning = $statusLower === 'running';
+        $isStopped = in_array($statusLower, ['stopped', 'suspended', 'error']);
+
+        // Live stats
+        $stats     = $api->getStats($uuid);
+        $cpuPct    = (int)($stats['cpu_pct']   ?? 0);
+        $ramUsed   = (int)($stats['ram_used']  ?? 0);
+        $ramTotal  = (int)($stats['ram_total'] ?? 0);
+        $diskTotal = (int)($stats['disk_total']?? 0);
+        $ramPct    = $ramTotal > 0 ? round($ramUsed / $ramTotal * 100) : 0;
+        $ramUsedGb = $ramUsed >= 1024 ? round($ramUsed / 1024, 1) . ' GB' : $ramUsed . ' MB';
+        $ramTotalGb= $ramTotal >= 1024 ? round($ramTotal / 1024, 1) . ' GB' : $ramTotal . ' MB';
+
+        $cpuColor  = $cpuPct > 85 ? 'danger' : ($cpuPct > 60 ? 'warning' : 'success');
+        $ramColor  = $ramPct > 85 ? 'danger' : ($ramPct > 60 ? 'warning' : 'info');
+
+        // ── Power Controls ──────────────────────────────────────────────────
+        $powerHtml = '
+<input type="hidden" id="zenith_power_action" name="zenith_power_action" value="" />
+<script>
+function zenithPower(action, msg) {
+    if (msg && !window.confirm(msg)) return;
+    document.getElementById("zenith_power_action").value = action;
+    var el = document.getElementById("zenith_power_action");
+    var form = el.form || (el.closest ? el.closest("form") : null) || document.forms[0];
+    if (form) form.submit();
+}
+</script>
+' . $statusLabel . '
+<span style="margin-left:15px;">
+    <button type="button" class="btn btn-success btn-xs" onclick="zenithPower(\'start\')"
+        ' . ($isRunning ? 'disabled' : '') . '>&#9654; Start</button>
+    <button type="button" class="btn btn-default btn-xs" onclick="zenithPower(\'restart\',\'Reboot this VPS?\')"
+        ' . (!$isRunning ? 'disabled' : '') . '>&#8635; Reboot</button>
+    <button type="button" class="btn btn-danger btn-xs" onclick="zenithPower(\'stop\',\'Stop this VPS?\')"
+        ' . (!$isRunning ? 'disabled' : '') . '>&#9646;&#9646; Stop</button>
+</span>';
+
+        // ── Info Table ───────────────────────────────────────────────────────
+        $infoHtml = '
+<table class="table table-condensed" style="margin:0;width:auto;">
+    <tr><td style="color:#888;width:80px;">VMID</td>       <td><code>' . htmlspecialchars($data['uuid'] ?? $uuid) . '</code></td></tr>
+    <tr><td style="color:#888;">IP</td>         <td><code>' . htmlspecialchars($ip ?: '—') . '</code></td></tr>
+    <tr><td style="color:#888;">UUID</td>       <td><small style="font-family:monospace">' . htmlspecialchars($uuid) . '</small></td></tr>
+    <tr><td style="color:#888;">Type</td>       <td>' . strtoupper(htmlspecialchars($data['type'] ?? '')) . '</td></tr>
+    <tr><td style="color:#888;">CPU</td>        <td>' . htmlspecialchars($data['cpu'] ?? '—') . ' vCPU</td></tr>
+    <tr><td style="color:#888;">RAM</td>        <td>' . $ramTotalGb . '</td></tr>
+    <tr><td style="color:#888;">Disk</td>       <td>' . htmlspecialchars($diskTotal) . ' GB</td></tr>
+</table>';
+
+        // ── Resource Bars ────────────────────────────────────────────────────
+        $statsHtml = $isRunning ? '
+<div style="max-width:320px;">
+    <div style="margin-bottom:8px;">
+        <div style="display:flex;justify-content:space-between;font-size:12px;margin-bottom:2px;">
+            <span>CPU</span><span>' . $cpuPct . '%</span>
+        </div>
+        <div class="progress progress-xs" style="height:10px;margin:0;">
+            <div class="progress-bar progress-bar-' . $cpuColor . '" style="width:' . $cpuPct . '%"></div>
+        </div>
+    </div>
+    <div>
+        <div style="display:flex;justify-content:space-between;font-size:12px;margin-bottom:2px;">
+            <span>RAM</span><span>' . $ramUsedGb . ' / ' . $ramTotalGb . '</span>
+        </div>
+        <div class="progress progress-xs" style="height:10px;margin:0;">
+            <div class="progress-bar progress-bar-' . $ramColor . '" style="width:' . $ramPct . '%"></div>
+        </div>
+    </div>
+</div>' : '<span style="color:#aaa;font-size:12px;">VPS is ' . $status . ' — stats unavailable</span>';
+
+        // ── PTR Records ──────────────────────────────────────────────────────
+        $rdnsHtml = '';
         try {
             $rdnsList = $api->getRdns($uuid);
             if (!empty($rdnsList)) {
-                $fields['— rDNS / PTR —'] = '<span style="color:#888;font-size:11px;">Edit the PTR records below, then click <strong>Save PTR Records</strong>.</span>';
                 foreach ($rdnsList as $entry) {
                     $ipAddr    = htmlspecialchars($entry['ip'] ?? '');
                     $ptr       = htmlspecialchars($entry['ptr'] ?? '');
                     $fieldName = 'rdns_' . str_replace(['.', ':'], '_', $ipAddr);
                     $errNote   = isset($entry['error'])
-                        ? ' &nbsp;<span style="color:#c0392b;font-size:11px">(' . htmlspecialchars($entry['error']) . ')</span>'
-                        : '';
-                    $fields["PTR for {$ipAddr}"] =
-                        '<input type="text" name="' . $fieldName . '" value="' . $ptr . '" '
-                        . 'style="width:300px;padding:3px 6px;font-family:monospace;border:1px solid #ccc;border-radius:3px;" '
-                        . 'placeholder="e.g. mail.example.com" />' . $errNote;
+                        ? ' <span style="color:#c0392b;font-size:11px">(' . htmlspecialchars($entry['error']) . ')</span>' : '';
+                    $rdnsHtml .= '
+<div style="margin-bottom:6px;">
+    <label style="font-weight:normal;font-size:12px;color:#666;margin-bottom:2px;display:block;">' . $ipAddr . '</label>
+    <input type="text" name="' . $fieldName . '" value="' . $ptr . '"
+        style="width:280px;padding:3px 6px;font-family:monospace;border:1px solid #ccc;border-radius:3px;display:inline-block;"
+        placeholder="e.g. mail.example.com" />' . $errNote . '
+</div>';
                 }
-                $fields[' '] = '<button type="submit" class="btn btn-primary btn-sm" style="margin-top:4px;">Save PTR Records</button>';
+                $rdnsHtml .= '<button type="submit" class="btn btn-primary btn-sm" style="margin-top:4px;" onclick="document.getElementById(\'zenith_power_action\').value=\'\';">Save PTR Records</button>';
             } else {
-                $fields['rDNS'] = 'No IPs assigned to this VPS.';
+                $rdnsHtml = '<span style="color:#aaa;font-size:12px;">No IPs assigned.</span>';
             }
         } catch (Exception $e) {
-            $fields['rDNS Error'] = htmlspecialchars($e->getMessage());
+            $rdnsHtml = '<span style="color:#c0392b;">' . htmlspecialchars($e->getMessage()) . '</span>';
         }
 
-        return $fields;
+        return [
+            'Power Controls' => $powerHtml,
+            'VPS Details'    => $infoHtml,
+            'Resource Usage' => $statsHtml,
+            'rDNS / PTR'     => $rdnsHtml,
+        ];
+
     } catch (Exception $e) {
-        return ['Zenith Error' => $e->getMessage()];
+        return ['Zenith Error' => htmlspecialchars($e->getMessage())];
     }
 }
 
@@ -228,8 +307,34 @@ function zenith_AdminServicesTabFieldsSave(array $params): string {
     $uuid = _zenith_getuuid($params);
     if (!$uuid) return '';
 
-    $api = _zenith_api($params);
+    $api         = _zenith_api($params);
+    $fields      = $params['modulefields'] ?? [];
+    $powerAction = trim($fields['zenith_power_action'] ?? '');
 
+    // Handle power control actions
+    if ($powerAction) {
+        try {
+            switch ($powerAction) {
+                case 'start':
+                    $api->start($uuid);
+                    logActivity("Zenith: Admin started VPS {$uuid}", $params['userid']);
+                    break;
+                case 'stop':
+                    $api->stop($uuid);
+                    logActivity("Zenith: Admin stopped VPS {$uuid}", $params['userid']);
+                    break;
+                case 'restart':
+                    $api->restart($uuid);
+                    logActivity("Zenith: Admin rebooted VPS {$uuid}", $params['userid']);
+                    break;
+            }
+            return '';
+        } catch (Exception $e) {
+            return 'Power action failed: ' . $e->getMessage();
+        }
+    }
+
+    // Handle PTR / rDNS save
     try {
         $rdnsList = $api->getRdns($uuid);
     } catch (Exception $e) {
@@ -240,18 +345,13 @@ function zenith_AdminServicesTabFieldsSave(array $params): string {
     foreach ($rdnsList as $entry) {
         $ipAddr    = $entry['ip'] ?? '';
         $fieldName = 'rdns_' . str_replace(['.', ':'], '_', $ipAddr);
-        if (!array_key_exists($fieldName, $params['modulefields'] ?? [])) continue;
-
-        $newPtr = trim($params['modulefields'][$fieldName]);
+        if (!array_key_exists($fieldName, $fields)) continue;
+        $newPtr = trim($fields[$fieldName]);
         $oldPtr = $entry['ptr'] ?? '';
         if ($newPtr === $oldPtr) continue;
-
         try {
             $api->updateRdns($uuid, $ipAddr, $newPtr);
-            logActivity(
-                "Zenith: Admin updated PTR for {$ipAddr} on VPS {$uuid} → " . ($newPtr ?: '(cleared)'),
-                $params['userid']
-            );
+            logActivity("Zenith: Admin updated PTR for {$ipAddr} on VPS {$uuid} → " . ($newPtr ?: '(cleared)'), $params['userid']);
         } catch (Exception $e) {
             $errors[] = "Failed {$ipAddr}: " . $e->getMessage();
         }

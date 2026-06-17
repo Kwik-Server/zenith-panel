@@ -3,6 +3,7 @@ import { whmcsAuth } from '../middleware/authenticate.js';
 import { addVpsJob } from '../services/queue.js';
 import { v4 as uuidv4 } from 'uuid';
 import bcrypt from 'bcryptjs';
+import * as proxmox from '../services/proxmox.js';
 
 export default async function whmcsRoutes(fastify) {
   fastify.addHook('preHandler', whmcsAuth);
@@ -179,6 +180,30 @@ export default async function whmcsRoutes(fastify) {
     const task = await query('INSERT INTO tasks (vps_id, type, status) VALUES (?, "delete_vps", "pending")', [vps.id]);
     await addVpsJob('delete_vps', { vpsId: vps.id, taskId: task.insertId });
     return reply.status(202).send({ success: true });
+  });
+
+  fastify.get('/:uuid/stats', async (req, reply) => {
+    const vps = await queryOne(
+      'SELECT v.*, p.cpu as plan_cpu, p.ram as plan_ram, p.disk as plan_disk FROM vps v JOIN plans p ON v.plan_id = p.id WHERE v.uuid = ?',
+      [req.params.uuid]
+    );
+    if (!vps || !vps.proxmox_vmid) return reply.status(404).send({ success: false, error: 'VPS not found or not provisioned' });
+    const node = await queryOne('SELECT * FROM nodes WHERE id = ?', [vps.node_id]);
+    try {
+      const live = vps.type === 'lxc'
+        ? await proxmox.getLxcContainerStats(node, vps.proxmox_vmid)
+        : await proxmox.getKvmVmStats(node, vps.proxmox_vmid);
+      return reply.send({ success: true, data: {
+        cpu_pct:   live.cpu,
+        ram_used:  live.ram,
+        ram_total: vps.plan_ram,
+        disk_total:vps.plan_disk,
+        netin:     live.netin,
+        netout:    live.netout,
+      }});
+    } catch {
+      return reply.send({ success: true, data: { cpu_pct: 0, ram_used: 0, ram_total: vps.plan_ram, disk_total: vps.plan_disk } });
+    }
   });
 
   fastify.get('/:uuid/rdns', async (req, reply) => {
