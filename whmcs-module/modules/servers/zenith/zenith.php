@@ -196,19 +196,22 @@ function zenith_AdminServicesTabFields(array $params): array {
         // rDNS / PTR fields — one editable input per assigned IP
         try {
             $rdnsList = $api->getRdns($uuid);
-            foreach ($rdnsList as $entry) {
-                $ipAddr    = htmlspecialchars($entry['ip'] ?? '');
-                $ptr       = htmlspecialchars($entry['ptr'] ?? '');
-                $fieldName = 'rdns_' . str_replace(['.', ':'], '_', $ipAddr);
-                $errNote   = isset($entry['error'])
-                    ? ' &nbsp;<span style="color:#c0392b;font-size:11px">(' . htmlspecialchars($entry['error']) . ')</span>'
-                    : '';
-                $fields["PTR for {$ipAddr}"] =
-                    '<input type="text" name="' . $fieldName . '" value="' . $ptr . '" '
-                    . 'style="width:300px;padding:3px 6px;font-family:monospace" '
-                    . 'placeholder="e.g. mail.example.com" />' . $errNote;
-            }
-            if (empty($rdnsList)) {
+            if (!empty($rdnsList)) {
+                $fields['— rDNS / PTR —'] = '<span style="color:#888;font-size:11px;">Edit the PTR records below, then click <strong>Save PTR Records</strong>.</span>';
+                foreach ($rdnsList as $entry) {
+                    $ipAddr    = htmlspecialchars($entry['ip'] ?? '');
+                    $ptr       = htmlspecialchars($entry['ptr'] ?? '');
+                    $fieldName = 'rdns_' . str_replace(['.', ':'], '_', $ipAddr);
+                    $errNote   = isset($entry['error'])
+                        ? ' &nbsp;<span style="color:#c0392b;font-size:11px">(' . htmlspecialchars($entry['error']) . ')</span>'
+                        : '';
+                    $fields["PTR for {$ipAddr}"] =
+                        '<input type="text" name="' . $fieldName . '" value="' . $ptr . '" '
+                        . 'style="width:300px;padding:3px 6px;font-family:monospace;border:1px solid #ccc;border-radius:3px;" '
+                        . 'placeholder="e.g. mail.example.com" />' . $errNote;
+                }
+                $fields[' '] = '<button type="submit" class="btn btn-primary btn-sm" style="margin-top:4px;">Save PTR Records</button>';
+            } else {
                 $fields['rDNS'] = 'No IPs assigned to this VPS.';
             }
         } catch (Exception $e) {
