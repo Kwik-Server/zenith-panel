@@ -255,19 +255,21 @@ function zenithPower(action, msg) {
         // ── Stat Tiles ───────────────────────────────────────────────────────
         $osName = htmlspecialchars($data['template_name'] ?? 'N/A');
 
+        // span: how many of 8 grid columns this tile occupies (2+1+1+1+2+1 = 8)
         $tiles = [
-            ['IP Address', $ip ?: '—',                       '#6366f1', '#eef2ff', 'monospace'],
-            ['CPU',        ($data['cpu'] ?? '—') . ' vCPU',  '#7c3aed', '#f5f3ff', 'inherit'],
-            ['RAM',        $ramTotalGb,                       '#0369a1', '#eff6ff', 'inherit'],
-            ['Disk',       $diskTotal . ' GB',                '#0f766e', '#f0fdfa', 'inherit'],
-            ['OS',         $osName,                           '#b45309', '#fffbeb', 'inherit'],
-            ['UUID',       substr($uuid, 0, 18) . '…',        '#64748b', '#f8fafc', 'monospace'],
+            ['IP Address', $ip ?: '—',                       '#6366f1', '#eef2ff', 'monospace', 2],
+            ['CPU',        ($data['cpu'] ?? '—') . ' vCPU',  '#7c3aed', '#f5f3ff', 'inherit',   1],
+            ['RAM',        $ramTotalGb,                       '#0369a1', '#eff6ff', 'inherit',   1],
+            ['Disk',       $diskTotal . ' GB',                '#0f766e', '#f0fdfa', 'inherit',   1],
+            ['OS',         $osName,                           '#b45309', '#fffbeb', 'inherit',   2],
+            ['UUID',       substr($uuid, 0, 18) . '…',        '#64748b', '#f8fafc', 'monospace', 1],
         ];
 
-        $infoHtml = '<div style="display:grid;grid-template-columns:repeat(6,1fr);gap:8px;max-width:780px;">';
-        foreach ($tiles as [$label, $value, $accent, $bg, $ff]) {
+        $infoHtml = '<div style="display:grid;grid-template-columns:repeat(8,1fr);gap:8px;max-width:800px;">';
+        foreach ($tiles as [$label, $value, $accent, $bg, $ff, $span]) {
+            $spanStyle = $span > 1 ? "grid-column:span {$span};" : '';
             $infoHtml .= '
-<div style="background:' . $bg . ';border:1px solid ' . $accent . '30;border-left:4px solid ' . $accent . ';border-radius:8px;padding:9px 12px;overflow:hidden;" title="' . htmlspecialchars($value) . '">
+<div style="' . $spanStyle . 'background:' . $bg . ';border:1px solid ' . $accent . '30;border-left:4px solid ' . $accent . ';border-radius:8px;padding:9px 12px;overflow:hidden;" title="' . htmlspecialchars($value) . '">
     <div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.07em;color:' . $accent . ';margin-bottom:3px;">' . $label . '</div>
     <div style="font-size:14px;font-weight:800;color:#0f172a;font-family:' . $ff . ';white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">' . htmlspecialchars($value) . '</div>
 </div>';
