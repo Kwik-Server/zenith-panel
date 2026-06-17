@@ -253,15 +253,18 @@ function zenithPower(action, msg) {
 </div>';
 
         // ── Stat Tiles ───────────────────────────────────────────────────────
+        $osName = htmlspecialchars($data['template_name'] ?? 'N/A');
+
         $tiles = [
             ['IP Address', $ip ?: '—',                       '#6366f1', '#eef2ff', 'monospace'],
             ['CPU',        ($data['cpu'] ?? '—') . ' vCPU',  '#7c3aed', '#f5f3ff', 'inherit'],
             ['RAM',        $ramTotalGb,                       '#0369a1', '#eff6ff', 'inherit'],
             ['Disk',       $diskTotal . ' GB',                '#0f766e', '#f0fdfa', 'inherit'],
+            ['OS',         $osName,                           '#b45309', '#fffbeb', 'inherit'],
             ['UUID',       substr($uuid, 0, 18) . '…',        '#64748b', '#f8fafc', 'monospace'],
         ];
 
-        $infoHtml = '<div style="display:grid;grid-template-columns:repeat(5,1fr);gap:8px;max-width:660px;">';
+        $infoHtml = '<div style="display:grid;grid-template-columns:repeat(6,1fr);gap:8px;max-width:780px;">';
         foreach ($tiles as [$label, $value, $accent, $bg, $ff]) {
             $infoHtml .= '
 <div style="background:' . $bg . ';border:1px solid ' . $accent . '30;border-left:4px solid ' . $accent . ';border-radius:8px;padding:9px 12px;overflow:hidden;" title="' . htmlspecialchars($value) . '">
