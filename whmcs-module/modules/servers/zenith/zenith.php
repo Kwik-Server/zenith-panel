@@ -254,20 +254,19 @@ function zenithPower(action, msg) {
 
         // ── Stat Tiles ───────────────────────────────────────────────────────
         $tiles = [
-            ['IP Address',  $ip ?: '—',                       '#6366f1', '#eef2ff', 'monospace'],
-            ['Type',        strtoupper($data['type'] ?? '—'), '#0891b2', '#ecfeff', 'inherit'],
-            ['CPU',         ($data['cpu'] ?? '—') . ' vCPU',  '#7c3aed', '#f5f3ff', 'inherit'],
-            ['RAM',         $ramTotalGb,                       '#0369a1', '#eff6ff', 'inherit'],
-            ['Disk',        $diskTotal . ' GB',                '#0f766e', '#f0fdfa', 'inherit'],
-            ['UUID',        substr($uuid, 0, 18) . '…',        '#64748b', '#f8fafc', 'monospace'],
+            ['IP Address', $ip ?: '—',                       '#6366f1', '#eef2ff', 'monospace'],
+            ['CPU',        ($data['cpu'] ?? '—') . ' vCPU',  '#7c3aed', '#f5f3ff', 'inherit'],
+            ['RAM',        $ramTotalGb,                       '#0369a1', '#eff6ff', 'inherit'],
+            ['Disk',       $diskTotal . ' GB',                '#0f766e', '#f0fdfa', 'inherit'],
+            ['UUID',       substr($uuid, 0, 18) . '…',        '#64748b', '#f8fafc', 'monospace'],
         ];
 
-        $infoHtml = '<div style="display:grid;grid-template-columns:repeat(3,160px);gap:10px;">';
+        $infoHtml = '<div style="display:grid;grid-template-columns:repeat(5,1fr);gap:8px;max-width:660px;">';
         foreach ($tiles as [$label, $value, $accent, $bg, $ff]) {
             $infoHtml .= '
-<div style="background:' . $bg . ';border:1px solid ' . $accent . '30;border-left:4px solid ' . $accent . ';border-radius:8px;padding:10px 14px;overflow:hidden;" title="' . htmlspecialchars($value) . '">
-    <div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.07em;color:' . $accent . ';margin-bottom:4px;">' . $label . '</div>
-    <div style="font-size:15px;font-weight:800;color:#0f172a;font-family:' . $ff . ';white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">' . htmlspecialchars($value) . '</div>
+<div style="background:' . $bg . ';border:1px solid ' . $accent . '30;border-left:4px solid ' . $accent . ';border-radius:8px;padding:9px 12px;overflow:hidden;" title="' . htmlspecialchars($value) . '">
+    <div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.07em;color:' . $accent . ';margin-bottom:3px;">' . $label . '</div>
+    <div style="font-size:14px;font-weight:800;color:#0f172a;font-family:' . $ff . ';white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">' . htmlspecialchars($value) . '</div>
 </div>';
         }
         $infoHtml .= '</div>';
