@@ -256,7 +256,8 @@ export default async function whmcsRoutes(fastify) {
     if (!vps) return reply.status(404).send({ success: false, error: 'VPS not found' });
     return reply.send({ success: true, data: {
       uuid: vps.uuid, status: vps.status, hostname: vps.hostname,
-      ip_address: vps.ip_address, cpu: vps.cpu, ram: vps.ram, disk: vps.disk, type: vps.type
+      ip_address: vps.ip_address, cpu: vps.cpu, ram: vps.ram, disk: vps.disk, type: vps.type,
+      proxmox_vmid: vps.proxmox_vmid,
     }});
   });
 }

@@ -232,15 +232,17 @@ function zenithPower(action, msg) {
 </span>';
 
         // ── Info Table ───────────────────────────────────────────────────────
+        $proxmoxVmid = htmlspecialchars($data['proxmox_vmid'] ?? '—');
+
         $infoHtml = '
 <table class="table table-condensed" style="margin:0;width:auto;">
-    <tr><td style="color:#888;width:80px;">VMID</td>       <td><code>' . htmlspecialchars($data['uuid'] ?? $uuid) . '</code></td></tr>
-    <tr><td style="color:#888;">IP</td>         <td><code>' . htmlspecialchars($ip ?: '—') . '</code></td></tr>
-    <tr><td style="color:#888;">UUID</td>       <td><small style="font-family:monospace">' . htmlspecialchars($uuid) . '</small></td></tr>
-    <tr><td style="color:#888;">Type</td>       <td>' . strtoupper(htmlspecialchars($data['type'] ?? '')) . '</td></tr>
-    <tr><td style="color:#888;">CPU</td>        <td>' . htmlspecialchars($data['cpu'] ?? '—') . ' vCPU</td></tr>
-    <tr><td style="color:#888;">RAM</td>        <td>' . $ramTotalGb . '</td></tr>
-    <tr><td style="color:#888;">Disk</td>       <td>' . htmlspecialchars($diskTotal) . ' GB</td></tr>
+    <tr><td style="color:#888;width:80px;">Proxmox ID</td> <td><strong>' . $proxmoxVmid . '</strong></td></tr>
+    <tr><td style="color:#888;">IP</td>                    <td><code>' . htmlspecialchars($ip ?: '—') . '</code></td></tr>
+    <tr><td style="color:#888;">UUID</td>                  <td><small style="font-family:monospace">' . htmlspecialchars($uuid) . '</small></td></tr>
+    <tr><td style="color:#888;">Type</td>                  <td>' . strtoupper(htmlspecialchars($data['type'] ?? '')) . '</td></tr>
+    <tr><td style="color:#888;">CPU</td>                   <td>' . htmlspecialchars($data['cpu'] ?? '—') . ' vCPU</td></tr>
+    <tr><td style="color:#888;">RAM</td>                   <td>' . $ramTotalGb . '</td></tr>
+    <tr><td style="color:#888;">Disk</td>                  <td>' . htmlspecialchars($diskTotal) . ' GB</td></tr>
 </table>';
 
         // ── Resource Bars ────────────────────────────────────────────────────
