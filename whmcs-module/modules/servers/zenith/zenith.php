@@ -206,8 +206,17 @@ function zenith_AdminServicesTabFields(array $params): array {
         $ramUsedGb = $ramUsed >= 1024 ? round($ramUsed / 1024, 1) . ' GB' : $ramUsed . ' MB';
         $ramTotalGb= $ramTotal >= 1024 ? round($ramTotal / 1024, 1) . ' GB' : $ramTotal . ' MB';
 
-        $cpuColor  = $cpuPct > 85 ? 'danger' : ($cpuPct > 60 ? 'warning' : 'success');
-        $ramColor  = $ramPct > 85 ? 'danger' : ($ramPct > 60 ? 'warning' : 'info');
+        $cpuBarColor = $cpuPct > 85 ? '#ef4444' : ($cpuPct > 60 ? '#f59e0b' : '#6366f1');
+        $ramBarColor = $ramPct > 85 ? '#ef4444' : ($ramPct > 60 ? '#f59e0b' : '#3b82f6');
+
+        $statusColors = [
+            'running'   => ['bg' => '#052e16', 'border' => '#16a34a', 'text' => '#4ade80', 'dot' => '●'],
+            'stopped'   => ['bg' => '#1e293b', 'border' => '#475569', 'text' => '#94a3b8', 'dot' => '○'],
+            'suspended' => ['bg' => '#2d1b00', 'border' => '#d97706', 'text' => '#fbbf24', 'dot' => '⏸'],
+            'error'     => ['bg' => '#2d0a0a', 'border' => '#dc2626', 'text' => '#f87171', 'dot' => '✕'],
+            'creating'  => ['bg' => '#0c1a2e', 'border' => '#3b82f6', 'text' => '#60a5fa', 'dot' => '⟳'],
+        ];
+        $sc = $statusColors[$statusLower] ?? $statusColors['stopped'];
 
         // ── Power Controls ──────────────────────────────────────────────────
         $powerHtml = '
@@ -221,73 +230,109 @@ function zenithPower(action, msg) {
     if (form) form.submit();
 }
 </script>
-' . $statusLabel . '
-<span style="margin-left:15px;">
-    <button type="button" class="btn btn-success btn-xs" onclick="zenithPower(\'start\')"
-        ' . ($isRunning ? 'disabled' : '') . '>&#9654; Start</button>
-    <button type="button" class="btn btn-default btn-xs" onclick="zenithPower(\'restart\',\'Reboot this VPS?\')"
-        ' . (!$isRunning ? 'disabled' : '') . '>&#8635; Reboot</button>
-    <button type="button" class="btn btn-danger btn-xs" onclick="zenithPower(\'stop\',\'Stop this VPS?\')"
-        ' . (!$isRunning ? 'disabled' : '') . '>&#9646;&#9646; Stop</button>
-</span>';
+<div style="display:inline-flex;align-items:center;gap:12px;background:#0f172a;border-radius:10px;padding:12px 18px;border:1px solid #1e293b;">
+    <span style="background:' . $sc['bg'] . ';border:1px solid ' . $sc['border'] . ';color:' . $sc['text'] . ';padding:5px 14px;border-radius:20px;font-size:13px;font-weight:700;letter-spacing:.03em;">
+        ' . $sc['dot'] . ' ' . strtoupper($status) . '
+    </span>
+    <div style="width:1px;height:28px;background:#334155;"></div>
+    <button type="button" onclick="zenithPower(\'start\')" ' . ($isRunning ? 'disabled' : '') . '
+        style="padding:7px 16px;border-radius:7px;font-size:13px;font-weight:700;border:none;cursor:pointer;
+               background:' . ($isRunning ? '#1e293b' : '#15803d') . ';color:' . ($isRunning ? '#334155' : '#fff') . ';">
+        &#9654; Start
+    </button>
+    <button type="button" onclick="zenithPower(\'restart\',\'Reboot this VPS?\')" ' . (!$isRunning ? 'disabled' : '') . '
+        style="padding:7px 16px;border-radius:7px;font-size:13px;font-weight:700;border:none;cursor:pointer;
+               background:' . (!$isRunning ? '#1e293b' : '#1d4ed8') . ';color:' . (!$isRunning ? '#334155' : '#fff') . ';">
+        &#8635; Reboot
+    </button>
+    <button type="button" onclick="zenithPower(\'stop\',\'Stop this VPS?\')" ' . (!$isRunning ? 'disabled' : '') . '
+        style="padding:7px 16px;border-radius:7px;font-size:13px;font-weight:700;border:none;cursor:pointer;
+               background:' . (!$isRunning ? '#1e293b' : '#b91c1c') . ';color:' . (!$isRunning ? '#334155' : '#fff') . ';">
+        &#9646;&#9646; Stop
+    </button>
+</div>';
 
-        // ── Info Table ───────────────────────────────────────────────────────
-        $infoHtml = '
-<table class="table table-condensed" style="margin:0;width:auto;">
-    <tr><td style="color:#888;width:80px;">IP</td>         <td><code>' . htmlspecialchars($ip ?: '—') . '</code></td></tr>
-    <tr><td style="color:#888;">UUID</td>                  <td><small style="font-family:monospace">' . htmlspecialchars($uuid) . '</small></td></tr>
-    <tr><td style="color:#888;">Type</td>                  <td>' . strtoupper(htmlspecialchars($data['type'] ?? '')) . '</td></tr>
-    <tr><td style="color:#888;">CPU</td>                   <td>' . htmlspecialchars($data['cpu'] ?? '—') . ' vCPU</td></tr>
-    <tr><td style="color:#888;">RAM</td>                   <td>' . $ramTotalGb . '</td></tr>
-    <tr><td style="color:#888;">Disk</td>                  <td>' . htmlspecialchars($diskTotal) . ' GB</td></tr>
-</table>';
+        // ── Stat Tiles ───────────────────────────────────────────────────────
+        $tiles = [
+            ['IP Address',  $ip ?: '—',                       '#6366f1', '#eef2ff', 'monospace'],
+            ['Type',        strtoupper($data['type'] ?? '—'), '#0891b2', '#ecfeff', 'inherit'],
+            ['CPU',         ($data['cpu'] ?? '—') . ' vCPU',  '#7c3aed', '#f5f3ff', 'inherit'],
+            ['RAM',         $ramTotalGb,                       '#0369a1', '#eff6ff', 'inherit'],
+            ['Disk',        $diskTotal . ' GB',                '#0f766e', '#f0fdfa', 'inherit'],
+            ['UUID',        substr($uuid, 0, 18) . '…',        '#64748b', '#f8fafc', 'monospace'],
+        ];
+
+        $infoHtml = '<div style="display:flex;flex-wrap:wrap;gap:10px;max-width:560px;">';
+        foreach ($tiles as [$label, $value, $accent, $bg, $ff]) {
+            $infoHtml .= '
+<div style="background:' . $bg . ';border:1px solid ' . $accent . '30;border-left:4px solid ' . $accent . ';border-radius:8px;padding:10px 14px;min-width:120px;flex:1;">
+    <div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.07em;color:' . $accent . ';margin-bottom:4px;">' . $label . '</div>
+    <div style="font-size:15px;font-weight:800;color:#0f172a;font-family:' . $ff . ';">' . htmlspecialchars($value) . '</div>
+</div>';
+        }
+        $infoHtml .= '</div>';
 
         // ── Resource Bars ────────────────────────────────────────────────────
-        $statsHtml = $isRunning ? '
-<div style="max-width:320px;">
-    <div style="margin-bottom:8px;">
-        <div style="display:flex;justify-content:space-between;font-size:12px;margin-bottom:2px;">
-            <span>CPU</span><span>' . $cpuPct . '%</span>
+        if ($isRunning) {
+            $statsHtml = '
+<div style="max-width:480px;">
+    <div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:10px;padding:16px;margin-bottom:10px;">
+        <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:8px;">
+            <span style="font-size:13px;font-weight:700;color:#374151;text-transform:uppercase;letter-spacing:.05em;">CPU Usage</span>
+            <span style="font-size:26px;font-weight:900;color:' . $cpuBarColor . ';">' . $cpuPct . '%</span>
         </div>
-        <div class="progress progress-xs" style="height:10px;margin:0;">
-            <div class="progress-bar progress-bar-' . $cpuColor . '" style="width:' . $cpuPct . '%"></div>
-        </div>
-    </div>
-    <div>
-        <div style="display:flex;justify-content:space-between;font-size:12px;margin-bottom:2px;">
-            <span>RAM</span><span>' . $ramUsedGb . ' / ' . $ramTotalGb . '</span>
-        </div>
-        <div class="progress progress-xs" style="height:10px;margin:0;">
-            <div class="progress-bar progress-bar-' . $ramColor . '" style="width:' . $ramPct . '%"></div>
+        <div style="background:#e2e8f0;border-radius:6px;height:16px;overflow:hidden;">
+            <div style="background:linear-gradient(90deg,' . $cpuBarColor . ',' . $cpuBarColor . 'aa);width:' . max($cpuPct, 2) . '%;height:16px;border-radius:6px;transition:width .3s;"></div>
         </div>
     </div>
-</div>' : '<span style="color:#aaa;font-size:12px;">VPS is ' . $status . ' — stats unavailable</span>';
+    <div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:10px;padding:16px;">
+        <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:8px;">
+            <span style="font-size:13px;font-weight:700;color:#374151;text-transform:uppercase;letter-spacing:.05em;">RAM Usage</span>
+            <span style="font-size:16px;font-weight:800;color:' . $ramBarColor . ';">' . $ramUsedGb . ' <span style="font-size:12px;font-weight:600;color:#94a3b8;">/ ' . $ramTotalGb . '</span></span>
+        </div>
+        <div style="background:#e2e8f0;border-radius:6px;height:16px;overflow:hidden;">
+            <div style="background:linear-gradient(90deg,' . $ramBarColor . ',' . $ramBarColor . 'aa);width:' . max($ramPct, 2) . '%;height:16px;border-radius:6px;transition:width .3s;"></div>
+        </div>
+        <div style="text-align:right;font-size:11px;color:#94a3b8;margin-top:4px;">' . $ramPct . '% used</div>
+    </div>
+</div>';
+        } else {
+            $statsHtml = '<div style="background:#f1f5f9;border-radius:8px;padding:14px 18px;color:#64748b;font-size:13px;font-weight:600;border-left:4px solid #cbd5e1;">
+                ⏸ VPS is ' . $status . ' — resource stats are unavailable while powered off.
+            </div>';
+        }
 
         // ── PTR Records ──────────────────────────────────────────────────────
         $rdnsHtml = '';
         try {
             $rdnsList = $api->getRdns($uuid);
             if (!empty($rdnsList)) {
+                $rdnsHtml = '<div style="max-width:480px;">';
                 foreach ($rdnsList as $entry) {
                     $ipAddr    = htmlspecialchars($entry['ip'] ?? '');
                     $ptr       = htmlspecialchars($entry['ptr'] ?? '');
                     $fieldName = 'rdns_' . str_replace(['.', ':'], '_', $ipAddr);
                     $errNote   = isset($entry['error'])
-                        ? ' <span style="color:#c0392b;font-size:11px">(' . htmlspecialchars($entry['error']) . ')</span>' : '';
+                        ? '<span style="color:#ef4444;font-size:11px;margin-left:6px;">(' . htmlspecialchars($entry['error']) . ')</span>' : '';
                     $rdnsHtml .= '
-<div style="margin-bottom:6px;">
-    <label style="font-weight:normal;font-size:12px;color:#666;margin-bottom:2px;display:block;">' . $ipAddr . '</label>
+<div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;padding:10px 12px;margin-bottom:8px;">
+    <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:#6366f1;margin-bottom:6px;">&#127760; ' . $ipAddr . $errNote . '</div>
     <input type="text" name="' . $fieldName . '" value="' . $ptr . '"
-        style="width:280px;padding:3px 6px;font-family:monospace;border:1px solid #ccc;border-radius:3px;display:inline-block;"
-        placeholder="e.g. mail.example.com" />' . $errNote . '
+        placeholder="e.g. mail.example.com"
+        style="width:100%;padding:7px 10px;font-family:monospace;font-size:13px;border:1px solid #cbd5e1;border-radius:6px;box-sizing:border-box;color:#0f172a;background:#fff;" />
 </div>';
                 }
-                $rdnsHtml .= '<button type="submit" class="btn btn-primary btn-sm" style="margin-top:4px;" onclick="document.getElementById(\'zenith_power_action\').value=\'\';">Save PTR Records</button>';
+                $rdnsHtml .= '
+<button type="submit" onclick="document.getElementById(\'zenith_power_action\').value=\'\';"
+    style="margin-top:4px;padding:9px 20px;background:#6366f1;color:#fff;border:none;border-radius:8px;font-size:13px;font-weight:700;cursor:pointer;letter-spacing:.02em;">
+    &#10003; Save PTR Records
+</button>';
+                $rdnsHtml .= '</div>';
             } else {
-                $rdnsHtml = '<span style="color:#aaa;font-size:12px;">No IPs assigned.</span>';
+                $rdnsHtml = '<div style="background:#f1f5f9;border-radius:8px;padding:14px;color:#64748b;font-size:13px;">No IPs assigned to this VPS.</div>';
             }
         } catch (Exception $e) {
-            $rdnsHtml = '<span style="color:#c0392b;">' . htmlspecialchars($e->getMessage()) . '</span>';
+            $rdnsHtml = '<div style="color:#ef4444;">' . htmlspecialchars($e->getMessage()) . '</div>';
         }
 
         return [
