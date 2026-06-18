@@ -28,6 +28,9 @@ function zenith_ConfigOptions(): array {
         'Ubuntu 24.04 Template ID'      => ['Type' => 'text', 'Size' => 10, 'Description' => 'Template ID for Ubuntu 24.04'],
         'Debian 13 Template ID'         => ['Type' => 'text', 'Size' => 10, 'Description' => 'Template ID for Debian 13'],
         'Windows Server 2019 Template ID' => ['Type' => 'text', 'Size' => 10, 'Description' => 'Template ID for Windows Server 2019'],
+        'CentOS 8 Template ID'          => ['Type' => 'text', 'Size' => 10, 'Description' => 'Template ID for CentOS 8'],
+        'Ubuntu 25.04 Template ID'      => ['Type' => 'text', 'Size' => 10, 'Description' => 'Template ID for Ubuntu 25.04'],
+        'Ubuntu 26.04 Template ID'      => ['Type' => 'text', 'Size' => 10, 'Description' => 'Template ID for Ubuntu 26.04'],
     ];
 }
 
@@ -75,6 +78,9 @@ function zenith_CreateAccount(array $params): string {
             'Ubuntu 24.04'         => (int)($params['configoption10'] ?? 0),
             'Debian 13'            => (int)($params['configoption11'] ?? 0),
             'Windows Server 2019'  => (int)($params['configoption12'] ?? 0),
+            'CentOS 8'             => (int)($params['configoption13'] ?? 0),
+            'Ubuntu 25.04'         => (int)($params['configoption14'] ?? 0),
+            'Ubuntu 26.04'         => (int)($params['configoption15'] ?? 0),
         ];
         $selectedOs = $params['customfields']['Operating System'] ?? '';
         $templateId = ($selectedOs && isset($osTemplateMap[$selectedOs]) && $osTemplateMap[$selectedOs])
