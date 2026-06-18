@@ -383,8 +383,9 @@ function zenith_AdminServicesTabFieldsSave(array $params): string {
     if (!$uuid) return '';
 
     $api         = _zenith_api($params);
-    $fields      = $params['modulefields'] ?? [];
-    $powerAction = trim($fields['zenith_power_action'] ?? '');
+    // Read directly from $_POST — WHMCS does NOT map our custom embedded
+    // <input> fields into $params['modulefields'] (only label-keyed fields).
+    $powerAction = trim($_POST['zenith_power_action'] ?? '');
 
     // Handle power control actions
     if ($powerAction) {
@@ -416,17 +417,19 @@ function zenith_AdminServicesTabFieldsSave(array $params): string {
         return 'Could not fetch rDNS records: ' . $e->getMessage();
     }
 
-    $errors = [];
+    $errors  = [];
+    $updated = 0;
     foreach ($rdnsList as $entry) {
         $ipAddr    = $entry['ip'] ?? '';
         $fieldName = 'rdns_' . str_replace(['.', ':'], '_', $ipAddr);
-        if (!array_key_exists($fieldName, $fields)) continue;
-        $newPtr = trim($fields[$fieldName]);
+        if (!array_key_exists($fieldName, $_POST)) continue;
+        $newPtr = trim($_POST[$fieldName]);
         $oldPtr = $entry['ptr'] ?? '';
         if ($newPtr === $oldPtr) continue;
         try {
             $api->updateRdns($uuid, $ipAddr, $newPtr);
             logActivity("Zenith: Admin updated PTR for {$ipAddr} on VPS {$uuid} → " . ($newPtr ?: '(cleared)'), $params['userid']);
+            $updated++;
         } catch (Exception $e) {
             $errors[] = "Failed {$ipAddr}: " . $e->getMessage();
         }
