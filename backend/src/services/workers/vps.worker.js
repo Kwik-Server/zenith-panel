@@ -54,12 +54,17 @@ async function processJob(job) {
         console.warn(`create_vps: no root_password supplied for VPS ${vpsId}; generated a fallback (sent via welcome email)`);
       }
 
+      // VM name: use the provided hostname, else fall back to the assigned IP (mirrors the
+      // LXC path, which names the container after its IP). Avoids the VM inheriting some
+      // unrelated value (e.g. the node's own IP) as its name.
+      const vmName = (vps.hostname && String(vps.hostname).trim()) || job.data.ip || `vps-${vpsId}`;
+
       if (type === 'kvm') {
         const tpl = await queryOne('SELECT * FROM templates WHERE id = ?', [vps.template_id]);
         await proxmox.createKvmVm(node, {
           vmid,
           templateVmid: parseInt(tpl.proxmox_template_id),
-          hostname:     vps.hostname,
+          hostname:     vmName,
           cpus:         vps.cpu,
           ram:          vps.ram,
           diskSize:     vps.disk,
