@@ -194,22 +194,30 @@ export async function createKvmVm(node, { vmid, templateVmid, hostname, cpus, ra
     });
   }
 
-  // Always add cloud-init drive and configure (works for both Linux cloud-init and Windows cloudbase-init)
-  try {
-    await req(node, 'PUT', `/nodes/${pveNode}/qemu/${vmid}/config`, {
-      cores:    cpus,
-      memory:   ram,
-      ide3:     `${storage}:cloudinit`,
-      cipassword: password,
-      ipconfig0: ipConfig || 'ip=dhcp',
-      nameserver: '8.8.8.8',
-      searchdomain: 'localdomain',
-    });
-    await req(node, 'POST', `/nodes/${pveNode}/qemu/${vmid}/cloudinit`).catch(() => {});
-  } catch (e) {
-    // Fallback: just set cores and memory if cloud-init not supported
-    await req(node, 'PUT', `/nodes/${pveNode}/qemu/${vmid}/config`, { cores: cpus, memory: ram }).catch(() => {});
+  // Add cloud-init drive and configure (works for both Linux cloud-init and Windows cloudbase-init).
+  // This carries the IP, password and DNS — retry transient API errors and throw if it ultimately
+  // fails, so a hiccup marks the job failed rather than silently leaving a VM with no network or
+  // password (which then looks "running" but is unreachable by SSH and console).
+  const ciConfig = {
+    cores:    cpus,
+    memory:   ram,
+    ide3:     `${storage}:cloudinit`,
+    cipassword: password,
+    ipconfig0: ipConfig || 'ip=dhcp',
+    nameserver: '8.8.8.8',
+    searchdomain: 'localdomain',
+  };
+  let ciApplied = false;
+  for (let attempt = 1; attempt <= 3 && !ciApplied; attempt++) {
+    try {
+      await req(node, 'PUT', `/nodes/${pveNode}/qemu/${vmid}/config`, ciConfig);
+      ciApplied = true;
+    } catch (e) {
+      if (attempt === 3) throw new Error(`cloud-init config failed for vmid ${vmid} after 3 attempts: ${e.message}`);
+      await new Promise(r => setTimeout(r, 3000));
+    }
   }
+  await req(node, 'POST', `/nodes/${pveNode}/qemu/${vmid}/cloudinit`).catch(() => {});
 
   // Start VM
   const startTask = await req(node, 'POST', `/nodes/${pveNode}/qemu/${vmid}/status/start`);
