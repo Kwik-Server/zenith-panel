@@ -1,3 +1,4 @@
+import crypto from 'crypto';
 import { Worker } from 'bullmq';
 import { query, queryOne } from '../../config/database.js';
 import * as proxmox from '../proxmox.js';
@@ -41,6 +42,18 @@ async function processJob(job) {
       const vmid = await proxmox.getNextVmid(node);
       await query('UPDATE vps SET proxmox_vmid = ? WHERE id = ?', [vmid, vpsId]);
 
+      // Guarantee a usable root password (covers both KVM and LXC below). If the create
+      // request didn't supply one (e.g. an older create path or version skew), generate a
+      // strong fallback — otherwise proxmox flattenBody() drops the undefined password field
+      // (cipassword for KVM cloud-init, the root password for LXC), leaving root locked and
+      // the VPS unreachable by SSH *and* console.
+      const rootPassword = (job.data.root_password && String(job.data.root_password).length >= 8)
+        ? job.data.root_password
+        : crypto.randomBytes(12).toString('base64').replace(/[^A-Za-z0-9]/g, '').slice(0, 16);
+      if (rootPassword !== job.data.root_password) {
+        console.warn(`create_vps: no root_password supplied for VPS ${vpsId}; generated a fallback (sent via welcome email)`);
+      }
+
       if (type === 'kvm') {
         const tpl = await queryOne('SELECT * FROM templates WHERE id = ?', [vps.template_id]);
         await proxmox.createKvmVm(node, {
@@ -51,7 +64,7 @@ async function processJob(job) {
           ram:          vps.ram,
           diskSize:     vps.disk,
           ipConfig:     job.data.ipConfig || 'ip=dhcp',
-          password:     job.data.root_password,
+          password:     rootPassword,
         });
       } else {
         const tpl = await queryOne('SELECT * FROM templates WHERE id = ?', [vps.template_id]);
@@ -63,7 +76,7 @@ async function processJob(job) {
           cpus:               vps.cpu,
           ram:                vps.ram,
           diskSize:           vps.disk,
-          password:           job.data.root_password,
+          password:           rootPassword,
           storage:            node.storage,
           ipConfig:           job.data.ipConfig,
           additionalIpConfigs,
@@ -112,7 +125,7 @@ async function processJob(job) {
         await sendVpsCreatedEmail(user.email, {
           hostname: vps.hostname,
           ip: job.data.ip || 'See panel for IP',
-          password: job.data.root_password,
+          password: rootPassword,
         }).catch(() => {});
       }
       break;
