@@ -233,6 +233,16 @@ async function processJob(job) {
     }
 
     case 'enable_rescue': {
+      // KVM rescue: reboot the VM itself from a SystemRescue ISO (console access,
+      // original disk stays attached as /dev/sda). No rescue container/password.
+      if (type === 'kvm') {
+        const iso = job.data.rescue_iso || 'local:iso/systemrescue.iso';
+        await proxmox.enableKvmRescue(node, vps.proxmox_vmid, iso);
+        await query('UPDATE vps SET rescue_mode=1, rescue_vmid=NULL, rescue_password=NULL WHERE id=?', [vpsId]);
+        await setVpsStatus(vpsId, 'running');
+        break;
+      }
+
       await setVpsStatus(vpsId, 'stopped');
 
       // Get current container config to find original disk path
@@ -241,10 +251,7 @@ async function processJob(job) {
       const originalDiskPath = rootfsParts[0] || null;
 
       // Stop original container
-      try {
-        if (type === 'kvm') await proxmox.stopKvmVm(node, vps.proxmox_vmid);
-        else await proxmox.stopLxcContainer(node, vps.proxmox_vmid);
-      } catch {}
+      try { await proxmox.stopLxcContainer(node, vps.proxmox_vmid); } catch {}
       await new Promise(r => setTimeout(r, 3000));
 
       // Get IPs
@@ -285,24 +292,25 @@ async function processJob(job) {
     }
 
     case 'disable_rescue': {
+      // KVM rescue: detach the rescue ISO and boot back from the original disk
+      if (type === 'kvm') {
+        await proxmox.disableKvmRescue(node, vps.proxmox_vmid);
+        await query('UPDATE vps SET rescue_mode=0, rescue_vmid=NULL, rescue_password=NULL WHERE id=?', [vpsId]);
+        await setVpsStatus(vpsId, 'running');
+        break;
+      }
+
       const rescueVmid = vps.rescue_vmid;
 
       // Stop and delete rescue container
       if (rescueVmid) {
-        try {
-          if (type === 'kvm') await proxmox.stopKvmVm(node, rescueVmid);
-          else await proxmox.stopLxcContainer(node, rescueVmid);
-        } catch {}
+        try { await proxmox.stopLxcContainer(node, rescueVmid); } catch {}
         await new Promise(r => setTimeout(r, 2000));
-        try {
-          if (type === 'kvm') await proxmox.deleteKvmVm(node, rescueVmid);
-          else await proxmox.deleteLxcContainer(node, rescueVmid);
-        } catch {}
+        try { await proxmox.deleteLxcContainer(node, rescueVmid); } catch {}
       }
 
       // Start original container
-      if (type === 'kvm') await proxmox.startKvmVm(node, vps.proxmox_vmid);
-      else await proxmox.startLxcContainer(node, vps.proxmox_vmid);
+      await proxmox.startLxcContainer(node, vps.proxmox_vmid);
 
       await query('UPDATE vps SET rescue_mode=0, rescue_vmid=NULL, rescue_password=NULL WHERE id=?', [vpsId]);
       await setVpsStatus(vpsId, 'running');

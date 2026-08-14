@@ -20,12 +20,29 @@ function OsIcon({ name }) {
 }
 
 function VncConsole({ vpsId, token }) {
-  const proto = window.location.protocol === 'https:' ? 'wss' : 'ws';
-  const wsUrl = `${proto}://${window.location.host}/api/v1/client/vps/${vpsId}/console/ws?token=${token}`;
   const [VncScreen, setVncScreen] = useState(null);
+  const [conn, setConn] = useState(null);
+  const [error, setError] = useState(null);
   useEffect(() => { import('react-vnc').then(m => setVncScreen(() => m.VncScreen)); }, []);
-  if (!VncScreen) return <div className="flex items-center justify-center h-full text-slate-400"><p className="text-sm">Loading console...</p></div>;
-  return <VncScreen url={wsUrl} scaleViewport style={{ width:'100%', height:'100%', background:'#000' }} />;
+  // Get a VNC ticket first: the same ticket must go in the websocket URL AND be used
+  // as the RFB password, or Proxmox drops the session right after connecting.
+  useEffect(() => {
+    let cancelled = false;
+    setConn(null); setError(null);
+    clientAPI.vpsConsole(vpsId).then(r => {
+      if (cancelled) return;
+      const d = r.data.data;
+      const proto = window.location.protocol === 'https:' ? 'wss' : 'ws';
+      setConn({
+        wsUrl: `${proto}://${window.location.host}/api/v1/client/vps/${vpsId}/console/ws?token=${token}&vncport=${d.vncPort}&vncticket=${encodeURIComponent(d.ticket)}`,
+        ticket: d.ticket,
+      });
+    }).catch(e => { if (!cancelled) setError(e.response?.data?.error || 'Console unavailable'); });
+    return () => { cancelled = true; };
+  }, [vpsId]);
+  if (error) return <div className="flex items-center justify-center h-full text-red-400"><p className="text-sm">{error}</p></div>;
+  if (!VncScreen || !conn) return <div className="flex items-center justify-center h-full text-slate-400"><p className="text-sm">Loading console...</p></div>;
+  return <VncScreen url={conn.wsUrl} scaleViewport rfbOptions={{ credentials: { username: '', password: conn.ticket } }} style={{ width:'100%', height:'100%', background:'#000' }} />;
 }
 
 export default function ClientVPSDetail() {
@@ -77,7 +94,10 @@ export default function ClientVPSDetail() {
   useEffect(() => { if (tab === 'backups') loadBackups(); }, [tab]);
 
   const enableRescue = async () => {
-    if (!window.confirm('Enable rescue mode? Your VPS will be stopped and a rescue environment will boot with your disk mounted at /mnt/original.')) return;
+    const msg = vps?.type === 'kvm'
+      ? 'Enable rescue mode? Your VPS will reboot into a SystemRescue environment (access via the Console tab). Your disk stays attached as /dev/sda.'
+      : 'Enable rescue mode? Your VPS will be stopped and a rescue environment will boot with your disk mounted at /mnt/original.';
+    if (!window.confirm(msg)) return;
     setRescueLoading(true);
     try {
       const r = await clientAPI.enableRescue(id);
@@ -91,7 +111,10 @@ export default function ClientVPSDetail() {
   };
 
   const disableRescue = async () => {
-    if (!window.confirm('Exit rescue mode? The rescue container will be deleted and your original VPS will restart.')) return;
+    const msg = vps?.type === 'kvm'
+      ? 'Exit rescue mode? The rescue system will be detached and your VPS will boot normally from its disk.'
+      : 'Exit rescue mode? The rescue container will be deleted and your original VPS will restart.';
+    if (!window.confirm(msg)) return;
     setRescueLoading(true);
     try {
       await clientAPI.disableRescue(id);
@@ -435,19 +458,37 @@ export default function ClientVPSDetail() {
                 <LifeBuoy size={20} className="text-amber-500 shrink-0 mt-0.5"/>
                 <div>
                   <p className="font-semibold text-amber-800 mb-1">Rescue Mode Active</p>
-                  <p className="text-sm text-amber-700">Your original VPS is stopped. A rescue environment is running with your disk at <code className="font-mono">/mnt/original</code>. Fix your issues then exit rescue mode.</p>
+                  {vps.type === 'kvm' ? (
+                    <p className="text-sm text-amber-700">Your VPS has booted into SystemRescue. Open the <b>Console</b> tab — you are logged in as root. Your disk is <code className="font-mono">/dev/sda</code>. Fix your issues then exit rescue mode.</p>
+                  ) : (
+                    <p className="text-sm text-amber-700">Your original VPS is stopped. A rescue environment is running with your disk at <code className="font-mono">/mnt/original</code>. Fix your issues then exit rescue mode.</p>
+                  )}
                 </div>
               </div>
               <div className="bg-white rounded-xl border border-slate-200 p-5 space-y-3">
-                <h3 className="font-semibold text-slate-900">Rescue Credentials</h3>
-                <div className="bg-slate-50 rounded-lg p-3 font-mono text-sm space-y-1">
-                  <p><span className="text-slate-500">IP:</span> <span className="text-slate-900">{Array.isArray(vps.ip_addresses) && vps.ip_addresses.length > 0 ? vps.ip_addresses[0].ip_address : 'See overview'}</span></p>
-                  <p><span className="text-slate-500">User:</span> <span className="text-slate-900">root</span></p>
-                  {(rescuePassword || vps.rescue_password || sessionStorage.getItem(`rescue_pw_${id}`)) && (
-                    <p><span className="text-slate-500">Password:</span> <span className="text-slate-900">{rescuePassword || vps.rescue_password || sessionStorage.getItem(`rescue_pw_${id}`)}</span></p>
-                  )}
-                </div>
-                <p className="text-xs text-slate-500">Run <code className="font-mono bg-slate-100 px-1 rounded">chroot /mnt/original</code> to work inside your original OS.</p>
+                {vps.type === 'kvm' ? (
+                  <>
+                    <h3 className="font-semibold text-slate-900">How to access</h3>
+                    <ul className="text-sm text-slate-600 space-y-2">
+                      <li>1. Open the <b>Console</b> tab — SystemRescue auto-logs you in as root</li>
+                      <li>2. Mount your system: <code className="font-mono bg-slate-100 px-1 rounded">mount /dev/sda1 /mnt</code> (try sda2/sda3 if needed)</li>
+                      <li>3. Optionally <code className="font-mono bg-slate-100 px-1 rounded">chroot /mnt</code> to work inside your OS</li>
+                      <li>4. For SSH access: set a password with <code className="font-mono bg-slate-100 px-1 rounded">passwd</code>, then configure your IP manually</li>
+                    </ul>
+                  </>
+                ) : (
+                  <>
+                    <h3 className="font-semibold text-slate-900">Rescue Credentials</h3>
+                    <div className="bg-slate-50 rounded-lg p-3 font-mono text-sm space-y-1">
+                      <p><span className="text-slate-500">IP:</span> <span className="text-slate-900">{Array.isArray(vps.ip_addresses) && vps.ip_addresses.length > 0 ? vps.ip_addresses[0].ip_address : 'See overview'}</span></p>
+                      <p><span className="text-slate-500">User:</span> <span className="text-slate-900">root</span></p>
+                      {(rescuePassword || vps.rescue_password || sessionStorage.getItem(`rescue_pw_${id}`)) && (
+                        <p><span className="text-slate-500">Password:</span> <span className="text-slate-900">{rescuePassword || vps.rescue_password || sessionStorage.getItem(`rescue_pw_${id}`)}</span></p>
+                      )}
+                    </div>
+                    <p className="text-xs text-slate-500">Run <code className="font-mono bg-slate-100 px-1 rounded">chroot /mnt/original</code> to work inside your original OS.</p>
+                  </>
+                )}
                 <button onClick={disableRescue} disabled={rescueLoading}
                   className="w-full py-2 bg-slate-800 hover:bg-slate-900 text-white rounded-lg text-sm font-medium disabled:opacity-50">
                   {rescueLoading ? 'Processing…' : 'Exit Rescue Mode'}
@@ -460,14 +501,22 @@ export default function ClientVPSDetail() {
                 <LifeBuoy size={20} className="text-blue-500 shrink-0 mt-0.5"/>
                 <div>
                   <p className="font-semibold text-blue-800 mb-1">Rescue Mode</p>
-                  <p className="text-sm text-blue-700">Use rescue mode when you're locked out or your OS is broken. Your VPS will be stopped and a rescue environment will boot. Your original disk will be mounted at <code className="font-mono">/mnt/original</code> so your data is safe.</p>
+                  {vps.type === 'kvm' ? (
+                    <p className="text-sm text-blue-700">Use rescue mode when you're locked out or your OS is broken. Your VPS reboots into a SystemRescue environment (via the Console tab) with your disk attached as <code className="font-mono">/dev/sda</code> — your data is safe.</p>
+                  ) : (
+                    <p className="text-sm text-blue-700">Use rescue mode when you're locked out or your OS is broken. Your VPS will be stopped and a rescue environment will boot. Your original disk will be mounted at <code className="font-mono">/mnt/original</code> so your data is safe.</p>
+                  )}
                 </div>
               </div>
               <div className="bg-white rounded-xl border border-slate-200 p-5">
                 <ul className="text-sm text-slate-600 space-y-2 mb-5">
                   <li>✓ Your data is preserved and accessible</li>
-                  <li>✓ SSH access restored with rescue credentials</li>
-                  <li>✓ Use <code className="font-mono bg-slate-100 px-1 rounded">chroot /mnt/original</code> to fix your OS</li>
+                  {vps.type === 'kvm'
+                    ? <li>✓ Full root access via the Console tab</li>
+                    : <li>✓ SSH access restored with rescue credentials</li>}
+                  {vps.type === 'kvm'
+                    ? <li>✓ Mount your disk with <code className="font-mono bg-slate-100 px-1 rounded">mount /dev/sda1 /mnt</code></li>
+                    : <li>✓ Use <code className="font-mono bg-slate-100 px-1 rounded">chroot /mnt/original</code> to fix your OS</li>}
                   <li>✓ Exit rescue mode to restore normal operation</li>
                 </ul>
                 <button onClick={enableRescue} disabled={rescueLoading}

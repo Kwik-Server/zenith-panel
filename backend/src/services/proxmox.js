@@ -431,6 +431,33 @@ export async function createRescueContainer(node, { rescueVmid, rescueTemplate, 
   return rescueVmid;
 }
 
+// KVM rescue: boot the VM from a SystemRescue ISO with the original disk still
+// attached (visible as /dev/sda inside the rescue system). Console-based access —
+// unlike LXC rescue there is no separate container or SSH password.
+export async function enableKvmRescue(node, vmid, isoVolid) {
+  const pveNode = node.proxmox_node || 'pve';
+  await req(node, 'POST', `/nodes/${pveNode}/qemu/${vmid}/status/stop`).catch(() => {});
+  await new Promise(r => setTimeout(r, 3000));
+  await req(node, 'PUT', `/nodes/${pveNode}/qemu/${vmid}/config`, {
+    ide2: `${isoVolid},media=cdrom`,
+    boot: 'order=ide2;scsi0',
+  });
+  const task = await req(node, 'POST', `/nodes/${pveNode}/qemu/${vmid}/status/start`);
+  await waitForTask(node, task);
+}
+
+export async function disableKvmRescue(node, vmid) {
+  const pveNode = node.proxmox_node || 'pve';
+  await req(node, 'POST', `/nodes/${pveNode}/qemu/${vmid}/status/stop`).catch(() => {});
+  await new Promise(r => setTimeout(r, 3000));
+  await req(node, 'PUT', `/nodes/${pveNode}/qemu/${vmid}/config`, {
+    delete: 'ide2',
+    boot:   'order=scsi0',
+  });
+  const task = await req(node, 'POST', `/nodes/${pveNode}/qemu/${vmid}/status/start`);
+  await waitForTask(node, task);
+}
+
 export async function updateLxcConfig(node, vmid, config) {
   const pveNode = node.proxmox_node || 'pve';
   await req(node, 'PUT', `/nodes/${pveNode}/lxc/${vmid}/config`, config);

@@ -257,9 +257,24 @@ export default async function vpsRoutes(fastify) {
         if (!vps || !vps.proxmox_vmid) { socket.close(1008, 'VPS not found'); return resolve(); }
 
         const node = await queryOne('SELECT * FROM nodes WHERE id = ?', [vps.node_id]);
-        const vncData = vps.type === 'lxc'
-          ? await proxmox.getLxcVncProxy(node, vps.proxmox_vmid)
-          : await proxmox.getKvmVncProxy(node, vps.proxmox_vmid);
+
+        // Frontend passes the ticket+port from GET /:id/console and uses the same
+        // ticket as RFB password — Proxmox requires them to match (see client route).
+        let vncData;
+        if (req.query.vncticket && req.query.vncport) {
+          const pveNode = node.proxmox_node || 'pve';
+          vncData = {
+            host:    node.hostname,
+            port:    node.port || 8006,
+            vncPort: req.query.vncport,
+            ticket:  req.query.vncticket,
+            path:    `/api2/json/nodes/${pveNode}/${vps.type === 'lxc' ? 'lxc' : 'qemu'}/${vps.proxmox_vmid}/vncwebsocket`,
+          };
+        } else {
+          vncData = vps.type === 'lxc'
+            ? await proxmox.getLxcVncProxy(node, vps.proxmox_vmid)
+            : await proxmox.getKvmVncProxy(node, vps.proxmox_vmid);
+        }
 
         const wsUrl = `wss://${vncData.host}:${vncData.port}${vncData.path}?port=${vncData.vncPort}&vncticket=${encodeURIComponent(vncData.ticket)}`;
         const auth  = `PVEAPIToken=${node.api_token_id}=${node.api_token_secret}`;
@@ -270,13 +285,19 @@ export default async function vpsRoutes(fastify) {
           rejectUnauthorized: false,
         });
 
+        // Keep both legs alive through idle proxies (nginx default is 60s)
+        const keepalive = setInterval(() => {
+          try { socket.ping(); } catch {}
+          try { if (upstream.readyState === 1) upstream.ping(); } catch {}
+        }, 30000);
+
         upstream.on('open', () => {
           socket.on('message', (data) => { if (upstream.readyState === 1) upstream.send(data); });
         });
         upstream.on('message', (data) => { try { socket.send(data); } catch {} });
-        upstream.on('error',   (err)  => { console.error('Proxmox WS:', err.message); try { socket.close(1011); } catch {} resolve(); });
-        upstream.on('close',   ()     => { try { socket.close(); } catch {} resolve(); });
-        socket.on('close',     ()     => { upstream.close(); resolve(); });
+        upstream.on('error',   (err)  => { clearInterval(keepalive); console.error('Proxmox WS:', err.message); try { socket.close(1011); } catch {} resolve(); });
+        upstream.on('close',   ()     => { clearInterval(keepalive); try { socket.close(); } catch {} resolve(); });
+        socket.on('close',     ()     => { clearInterval(keepalive); upstream.close(); resolve(); });
 
       } catch (err) {
         console.error('Console WS error:', err.message);

@@ -8,15 +8,38 @@ import { useAuthStore } from '../../store/authStore';
 const STATUS_COLOR = { running: 'bg-green-100 text-green-700', stopped: 'bg-slate-100 text-slate-600', suspended: 'bg-amber-100 text-amber-700', error: 'bg-red-100 text-red-700', creating: 'bg-indigo-100 text-indigo-700' };
 
 function VncConsole({ vpsId, token }) {
-  const proto = window.location.protocol === 'https:' ? 'wss' : 'ws';
-  const wsUrl = `${proto}://${window.location.host}/api/v1/admin/vps/${vpsId}/console/ws?token=${token}`;
   const [VncScreen, setVncScreen] = useState(null);
+  const [conn, setConn] = useState(null);
+  const [error, setError] = useState(null);
 
   useEffect(() => {
     import('react-vnc').then(m => setVncScreen(() => m.VncScreen));
   }, []);
 
-  if (!VncScreen) return (
+  // Get a VNC ticket first: the same ticket must go in the websocket URL AND be used
+  // as the RFB password, or Proxmox drops the session right after connecting.
+  useEffect(() => {
+    let cancelled = false;
+    setConn(null); setError(null);
+    adminAPI.vpsConsole(vpsId).then(r => {
+      if (cancelled) return;
+      const d = r.data.data;
+      const proto = window.location.protocol === 'https:' ? 'wss' : 'ws';
+      setConn({
+        wsUrl: `${proto}://${window.location.host}/api/v1/admin/vps/${vpsId}/console/ws?token=${token}&vncport=${d.vncPort}&vncticket=${encodeURIComponent(d.ticket)}`,
+        ticket: d.ticket,
+      });
+    }).catch(e => { if (!cancelled) setError(e.response?.data?.error || 'Console unavailable'); });
+    return () => { cancelled = true; };
+  }, [vpsId]);
+
+  if (error) return (
+    <div className="flex items-center justify-center h-full bg-black rounded-xl text-red-400">
+      <p className="text-sm">{error}</p>
+    </div>
+  );
+
+  if (!VncScreen || !conn) return (
     <div className="flex items-center justify-center h-full bg-black rounded-xl text-slate-400">
       <p className="text-sm">Loading console...</p>
     </div>
@@ -24,8 +47,9 @@ function VncConsole({ vpsId, token }) {
 
   return (
     <VncScreen
-      url={wsUrl}
+      url={conn.wsUrl}
       scaleViewport
+      rfbOptions={{ credentials: { username: '', password: conn.ticket } }}
       style={{ width: '100%', height: '100%', background: '#000', borderRadius: '12px' }}
     />
   );

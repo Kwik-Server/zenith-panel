@@ -34,6 +34,13 @@ rsync -a --info=progress2 \
   "$DIR/build-remote.sh" \
   "root@$TARGET:$DIR/"
 
+# SystemRescue ISO — used for KVM rescue mode (worker boots VMs from local:iso/systemrescue.iso)
+if [ -f /var/lib/vz/template/iso/systemrescue.iso ]; then
+  echo "==> [3b/4] Syncing SystemRescue ISO (KVM rescue mode)"
+  $SSH "mkdir -p /var/lib/vz/template/iso"
+  rsync -a --info=progress2 /var/lib/vz/template/iso/systemrescue.iso "root@$TARGET:/var/lib/vz/template/iso/"
+fi
+
 echo "==> [4/4] Building templates on $TARGET"
 $SSH "chmod +x $DIR/build-remote.sh && $DIR/build-remote.sh"
 
