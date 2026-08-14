@@ -35,6 +35,32 @@ Safe to re-run: existing templates are skipped, occupied VMIDs are reported as
 CONFLICT (never overwritten), nodes without AVX2 skip 9007/9008, and the `images`
 content type is auto-enabled on `local` storage. No panel changes needed afterwards.
 
+## Windows Server 2022 template (VMID 9009)
+
+Built fully unattended from the eval ISO — assets in `windows/` (autounattend.xml, setup.ps1, go.cmd).
+Rebuild procedure (on a node with the ISOs in /var/lib/vz/template/iso — win2022-eval.iso,
+virtio-win.iso, zenith-unattend.iso; regenerate the latter with genisoimage from windows/ + the
+Cloudbase MSI in a zenith/ subdir):
+
+```bash
+qm create 9009 --name tpl-win2022-build --ostype win11 --memory 6144 --cores 4 --cpu host \
+  --scsihw virtio-scsi-single --sata0 local:64,format=raw --scsi1 local:1,format=raw \
+  --net0 e1000,bridge=vmbr0,firewall=1 --ide2 local:iso/win2022-eval.iso,media=cdrom \
+  --ide0 local:iso/virtio-win.iso,media=cdrom --ide1 local:iso/zenith-unattend.iso,media=cdrom \
+  --boot 'order=ide2;sata0'
+qm start 9009    # installs + configures itself, then powers off (~15 min)
+# after shutdown: detach ISOs + dummy scsi1, move sata0 -> scsi0, net0 -> virtio,
+# set --ciuser Administrator, qm template 9009  (see git history for exact commands)
+```
+
+Design notes: install goes to a SATA disk (no storage driver needed in WinPE); a dummy
+virtio-scsi disk activates vioscsi so the OS disk can be flipped to scsi0 afterwards
+(the panel resizes scsi0). NO sysprep — sysprep during the first OOBE logon breaks clone
+boot ("Windows could not start the installation process"); clones share SID/hostname,
+fine for standalone RDP VPSes. cloudbase-init applies IP + password per clone from the
+panel's ide3 config drive, and the worker additionally forces the Administrator password
+via the guest agent. Windows plans need disk >= 64GB (clones can only grow).
+
 ## Scripts
 
 - `ship-templates.sh` — run on Slave 62; rsyncs images + `build-remote.sh` to a target node and builds there.
