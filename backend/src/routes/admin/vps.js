@@ -247,7 +247,10 @@ export default async function vpsRoutes(fastify) {
   }
 
   // WebSocket VNC proxy — tunnels browser ↔ Proxmox VNC WebSocket
-  fastify.get('/:id/console/ws', { websocket: true }, (socket, req) => {
+  fastify.get('/:id/console/ws', { websocket: true }, (conn, req) => {
+    // @fastify/websocket v8 hands us a SocketStream (real WebSocket at .socket);
+    // v10+ hands us the WebSocket directly. Support both.
+    const socket = conn.socket || conn;
     return new Promise(async (resolve) => {
       try {
         const vps = await queryOne(
