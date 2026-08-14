@@ -91,6 +91,13 @@ export async function waitForGuestAgent(node, vmid, timeoutMs = 300000) {
   throw new Error('Guest agent timed out');
 }
 
+// Set a user's password inside the guest via the QEMU agent — used for Windows,
+// where it's more reliable than cloud-init/cloudbase password injection alone.
+export async function setGuestUserPassword(node, vmid, username, password) {
+  const pveNode = node.proxmox_node || 'pve';
+  return req(node, 'POST', `/nodes/${pveNode}/qemu/${vmid}/agent/set-user-password`, { username, password });
+}
+
 export async function runGuestExec(node, vmid, command) {
   const pveNode = node.proxmox_node || 'pve';
   const base = `https://${node.hostname}:${node.port || 8006}`;

@@ -118,11 +118,15 @@ async function processJob(job) {
       if (type === 'kvm') {
         const tpl = await queryOne('SELECT * FROM templates WHERE id = ?', [vps.template_id]);
         if (tpl?.os_family === 'windows') {
-          proxmox.waitForGuestAgent(node, vmid).then(() =>
-            proxmox.runGuestExec(node, vmid, ['powershell', '-c',
+          // Wait for cloudbase-init to finish, clear the PasswordExpired flag, then
+          // force-set the Administrator password via the guest agent — belt and braces
+          // so the client's password works regardless of cloudbase-init quirks.
+          proxmox.waitForGuestAgent(node, vmid)
+            .then(() => proxmox.runGuestExec(node, vmid, ['powershell', '-c',
               '$s=Get-Service "cloudbase-init" -ErrorAction SilentlyContinue; if($s){while($s.Status -ne "Stopped"){Start-Sleep 5;$s.Refresh()}}; $u=[ADSI]"WinNT://./Administrator,user"; $u.PasswordExpired=0; $u.SetInfo()'
-            ])
-          ).catch(() => {});
+            ]))
+            .then(() => proxmox.setGuestUserPassword(node, vmid, 'Administrator', rootPassword))
+            .catch(() => {});
         }
       }
 
