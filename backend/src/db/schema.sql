@@ -30,6 +30,7 @@ CREATE TABLE IF NOT EXISTS nodes (
   total_cpu        INT UNSIGNED NOT NULL DEFAULT 0,
   total_ram        INT UNSIGNED NOT NULL DEFAULT 0  COMMENT 'MB',
   total_disk       INT UNSIGNED NOT NULL DEFAULT 0  COMMENT 'GB',
+  oversell_ratio   DECIMAL(4,2) NOT NULL DEFAULT 1.00 COMMENT 'Capacity multiplier for overselling RAM/disk (e.g. 1.50 = 150%)',
   is_active        TINYINT(1) NOT NULL DEFAULT 1,
   created_at       DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;

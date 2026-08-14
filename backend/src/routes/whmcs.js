@@ -52,7 +52,7 @@ export default async function whmcsRoutes(fastify) {
     const pickBestNode = async () => {
       const candidates = await query(
         `SELECT
-           n.id, n.total_ram, n.total_disk,
+           n.id, n.total_ram, n.total_disk, n.oversell_ratio,
            (SELECT COUNT(*) FROM ip_pools ip JOIN ip_addresses ia ON ia.pool_id = ip.id
             WHERE ip.node_id = n.id AND ia.vps_id IS NULL) AS free_ip_count,
            (SELECT COALESCE(SUM(pl.ram),  0) FROM vps v JOIN plans pl ON pl.id = v.plan_id
@@ -61,16 +61,17 @@ export default async function whmcsRoutes(fastify) {
             WHERE v.node_id = n.id AND v.status NOT IN ('deleted','error')) AS allocated_disk
          FROM nodes n WHERE n.is_active = 1`
       );
+      // Capacity is scaled by each node's oversell_ratio (1.0 = no overselling)
+      const availRam  = n => Math.round(n.total_ram  * (n.oversell_ratio || 1)) - n.allocated_ram;
+      const availDisk = n => Math.round(n.total_disk * (n.oversell_ratio || 1)) - n.allocated_disk;
       const eligible = candidates
         .filter(n => {
           if (n.free_ip_count < 1) return false;
-          const availRam  = n.total_ram  - n.allocated_ram;
-          const availDisk = n.total_disk - n.allocated_disk;
-          if (n.total_ram  > 0 && availRam  < plan.ram)  return false;
-          if (n.total_disk > 0 && availDisk < plan.disk) return false;
+          if (n.total_ram  > 0 && availRam(n)  < plan.ram)  return false;
+          if (n.total_disk > 0 && availDisk(n) < plan.disk) return false;
           return true;
         })
-        .sort((a, b) => (b.total_ram - b.allocated_ram) - (a.total_ram - a.allocated_ram));
+        .sort((a, b) => availRam(b) - availRam(a));
       return eligible[0]?.id || null;
     };
 
@@ -113,6 +114,7 @@ export default async function whmcsRoutes(fastify) {
       vpsId, taskId: task.insertId, root_password,
       ip_address_id: freeIp?.id || null,
       ip: freeIp?.ip_address || null,
+      mac: freeIp?.mac_address || null,
       ipConfig,
     });
 

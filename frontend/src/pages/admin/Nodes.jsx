@@ -3,7 +3,7 @@ import { adminAPI } from '../../api/client';
 import { Plus, Wifi, Trash2, Pencil } from 'lucide-react';
 import toast from 'react-hot-toast';
 
-const EMPTY_FORM = { name: '', hostname: '', port: 8006, api_token_id: '', api_token_secret: '', proxmox_node: 'pve', storage: 'local', backup_storage: 'local', type: 'both', location: '', total_cpu: 0, total_ram: 0, total_disk: 0 };
+const EMPTY_FORM = { name: '', hostname: '', port: 8006, api_token_id: '', api_token_secret: '', proxmox_node: 'pve', storage: 'local', backup_storage: 'local', type: 'both', location: '', total_cpu: 0, total_ram: 0, total_disk: 0, oversell_ratio: 1.0 };
 
 export default function Nodes() {
   const [nodes, setNodes] = useState([]);
@@ -71,7 +71,7 @@ export default function Nodes() {
               <p>Storage: <span className="font-mono text-slate-700">{n.storage}</span></p>
               <p>Backup: <span className="font-mono text-slate-700">{n.backup_storage}</span></p>
               <p>Type: {n.type.toUpperCase()} · {n.location}</p>
-              <p>{n.total_cpu} CPU · {n.total_ram >= 1024 ? n.total_ram/1024 + 'GB' : n.total_ram + 'MB'} RAM · {n.total_disk}GB Disk</p>
+              <p>{n.total_cpu} CPU · {n.total_ram >= 1024 ? n.total_ram/1024 + 'GB' : n.total_ram + 'MB'} RAM · {n.total_disk}GB Disk{Number(n.oversell_ratio) > 1 ? ` · ${Number(n.oversell_ratio)}× oversell` : ''}</p>
             </div>
             <div className="flex gap-2">
               <button onClick={() => testConn(n.id)} disabled={testing === n.id}
@@ -108,6 +108,7 @@ export default function Nodes() {
                 { label: 'Total CPU Cores',       key: 'total_cpu',         placeholder: '32', type: 'number' },
                 { label: 'Total RAM (MB)',         key: 'total_ram',         placeholder: '65536', type: 'number' },
                 { label: 'Total Disk (GB)',        key: 'total_disk',        placeholder: '2000', type: 'number' },
+                { label: 'Oversell Ratio (1.0 = none, 1.5 = 150% capacity)', key: 'oversell_ratio', placeholder: '1.0', type: 'number' },
               ].map(({ label, key, placeholder, type }) => (
                 <div key={key}>
                   <label className="block text-sm font-medium text-slate-700 mb-1">{label}</label>
