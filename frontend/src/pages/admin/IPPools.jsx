@@ -52,6 +52,20 @@ export default function IPPools() {
     } catch (e) { toast.error(e.response?.data?.error || 'Failed'); }
   };
 
+  const editMac = async (poolId, ip) => {
+    const mac = window.prompt(
+      `MAC address for ${ip.ip_address}\n(needed for OneProvider IPs — leave empty for automatic MAC, e.g. Leaseweb)`,
+      ip.mac_address || ''
+    );
+    if (mac === null) return; // cancelled
+    try {
+      await adminAPI.updateIpMac(poolId, ip.id, mac.trim());
+      toast.success(mac.trim() ? 'MAC saved' : 'MAC cleared');
+      const r = await adminAPI.getPool(poolId);
+      setPoolDetail(d => ({ ...d, [poolId]: r.data.data }));
+    } catch (e) { toast.error(e.response?.data?.error || 'Failed'); }
+  };
+
   const removeIp = async (poolId, ipId, ipAddress) => {
     if (!window.confirm(`Remove IP ${ipAddress} from pool?`)) return;
     try {
@@ -105,8 +119,14 @@ export default function IPPools() {
                 <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
                   {poolDetail[p.id].ips?.map(ip => (
                     <div key={ip.id} className={`flex items-center justify-between px-3 py-2 rounded-lg text-sm font-mono ${ip.vps_id ? 'bg-rose-50 text-rose-700' : 'bg-slate-50 text-slate-700'}`}>
-                      <span>{ip.ip_address}</span>
-                      {!ip.vps_id && <button onClick={() => removeIp(p.id, ip.id, ip.ip_address)} className="text-slate-300 hover:text-red-500 ml-2"><Trash2 size={12}/></button>}
+                      <div className="min-w-0">
+                        <span>{ip.ip_address}</span>
+                        {ip.mac_address && <p className="text-[10px] text-slate-400 truncate">{ip.mac_address}</p>}
+                      </div>
+                      <div className="flex items-center shrink-0">
+                        <button onClick={() => editMac(p.id, ip)} title="Set MAC address" className="text-slate-300 hover:text-indigo-500 ml-2"><Pencil size={12}/></button>
+                        {!ip.vps_id && <button onClick={() => removeIp(p.id, ip.id, ip.ip_address)} className="text-slate-300 hover:text-red-500 ml-2"><Trash2 size={12}/></button>}
+                      </div>
                     </div>
                   ))}
                 </div>
@@ -180,8 +200,8 @@ export default function IPPools() {
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-2xl p-6 w-full max-w-sm">
             <h2 className="text-lg font-bold text-slate-900 mb-2">Add IPs</h2>
-            <p className="text-sm text-slate-500 mb-3">One IP address per line</p>
-            <textarea value={ipsText} onChange={e => setIpsText(e.target.value)} rows={8} placeholder={"203.0.113.10\n203.0.113.11\n203.0.113.12"}
+            <p className="text-sm text-slate-500 mb-3">One IP per line. For providers that require a specific MAC per IP (e.g. OneProvider), append it after a comma — Leaseweb-style IPs need no MAC.</p>
+            <textarea value={ipsText} onChange={e => setIpsText(e.target.value)} rows={8} placeholder={"203.0.113.10\n203.0.113.11,aa:bb:cc:dd:ee:ff\n203.0.113.12 aa-bb-cc-dd-ee-01"}
               className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm font-mono focus:ring-2 focus:ring-indigo-500 outline-none"/>
             <div className="flex gap-3 mt-4">
               <button onClick={() => setShowIps(null)} className="flex-1 py-2 border border-slate-200 rounded-lg text-sm text-slate-600">Cancel</button>

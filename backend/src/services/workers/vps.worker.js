@@ -70,10 +70,11 @@ async function processJob(job) {
           diskSize:     vps.disk,
           ipConfig:     job.data.ipConfig || 'ip=dhcp',
           password:     rootPassword,
+          macAddress:   job.data.mac || null,
         });
       } else {
         const tpl = await queryOne('SELECT * FROM templates WHERE id = ?', [vps.template_id]);
-        const additionalIpConfigs = (job.data.additional_ip_configs || []).map(ip => `ip=${ip.ipAddress}/${ip.cidr}`);
+        const additionalIpConfigs = (job.data.additional_ip_configs || []).map(ip => ({ ipConfig: `ip=${ip.ipAddress}/${ip.cidr}`, mac: ip.mac || null }));
         await proxmox.createLxcContainer(node, {
           vmid,
           templatePath:       tpl.path,
@@ -84,6 +85,7 @@ async function processJob(job) {
           password:           rootPassword,
           storage:            node.storage,
           ipConfig:           job.data.ipConfig,
+          macAddress:         job.data.mac || null,
           additionalIpConfigs,
         });
       }
@@ -219,9 +221,9 @@ async function processJob(job) {
       const cidr = netmaskToCidr(primaryIp?.netmask);
       const gw = primaryIp?.gateway || '';
       const ipConfig = primaryIp ? `ip=${primaryIp.ip_address}/${cidr}${gw ? ',gw=' + gw : ''}` : 'ip=dhcp';
-      const additionalIpConfigs = ips.slice(1).map(ip => `ip=${ip.ip_address}/${netmaskToCidr(ip.netmask)}`);
+      const additionalIpConfigs = ips.slice(1).map(ip => ({ ipConfig: `ip=${ip.ip_address}/${netmaskToCidr(ip.netmask)}`, mac: ip.mac_address || null }));
 
-      await proxmox.reinstallVm(node, vmid, type, ref, vps.hostname, job.data.root_password, vps.cpu, vps.ram, vps.disk, ipConfig, additionalIpConfigs);
+      await proxmox.reinstallVm(node, vmid, type, ref, vps.hostname, job.data.root_password, vps.cpu, vps.ram, vps.disk, ipConfig, additionalIpConfigs, primaryIp?.mac_address || null);
 
       if (job.data.template_id && job.data.template_id != vps.template_id) {
         await query('UPDATE vps SET template_id = ? WHERE id = ?', [job.data.template_id, vpsId]);
@@ -252,7 +254,7 @@ async function processJob(job) {
       const cidr = netmaskToCidr(primaryIp?.netmask);
       const gw = primaryIp?.gateway || '';
       const ipConfig = primaryIp ? `ip=${primaryIp.ip_address}/${cidr}${gw ? ',gw=' + gw : ''}` : 'ip=dhcp';
-      const additionalIpConfigs = ips.slice(1).map(ip => `ip=${ip.ip_address}/${netmaskToCidr(ip.netmask)}`);
+      const additionalIpConfigs = ips.slice(1).map(ip => ({ ipConfig: `ip=${ip.ip_address}/${netmaskToCidr(ip.netmask)}`, mac: ip.mac_address || null }));
 
       // Create rescue container
       const rescueVmid = await proxmox.getNextVmid(node);
@@ -262,7 +264,7 @@ async function processJob(job) {
       await proxmox.createRescueContainer(node, {
         rescueVmid, rescueTemplate,
         hostname: vps.hostname,
-        ipConfig, additionalIpConfigs,
+        ipConfig, macAddress: primaryIp?.mac_address || null, additionalIpConfigs,
         password: rescuePassword,
         originalDiskPath,
         storage: node.storage,

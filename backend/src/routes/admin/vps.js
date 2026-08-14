@@ -95,12 +95,14 @@ export default async function vpsRoutes(fastify) {
       id:        ip.id,
       ipAddress: ip.ip_address,
       cidr:      ip.netmask ? netmaskToCidr(ip.netmask) : 24,
+      mac:       ip.mac_address || null,
     }));
 
     await addVpsJob('create_vps', {
       vpsId, taskId: task.insertId, root_password,
       ip_address_id:      freeIp?.id || null,
       ip:                 freeIp?.ip_address || null,
+      mac:                freeIp?.mac_address || null,
       additional_ip_configs: additionalIpConfigs,
       ipConfig,
     });
@@ -129,9 +131,9 @@ export default async function vpsRoutes(fastify) {
     const node = await queryOne('SELECT * FROM nodes WHERE id = ?', [vps.node_id]);
     try {
       if (vps.type === 'kvm') {
-        await proxmox.reconfigureKvmNetwork(node, vps.proxmox_vmid, ipConfig);
+        await proxmox.reconfigureKvmNetwork(node, vps.proxmox_vmid, ipConfig, primary.mac_address || null);
       } else {
-        await proxmox.reconfigureLxcNetwork(node, vps.proxmox_vmid, ipConfig);
+        await proxmox.reconfigureLxcNetwork(node, vps.proxmox_vmid, ipConfig, primary.mac_address || null);
       }
     } catch (err) {
       return reply.status(422).send({ success: false, error: err.message });

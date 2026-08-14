@@ -173,7 +173,7 @@ export async function listStorageTemplates(node, storage) {
 
 // ─── QEMU (KVM) VM operations ────────────────────────────────────────────────
 
-export async function createKvmVm(node, { vmid, templateVmid, hostname, cpus, ram, diskSize, ipConfig, password }) {
+export async function createKvmVm(node, { vmid, templateVmid, hostname, cpus, ram, diskSize, ipConfig, password, macAddress }) {
   const pveNode = node.proxmox_node || 'pve';
   const storage = node.storage || 'local-lvm';
 
@@ -207,6 +207,9 @@ export async function createKvmVm(node, { vmid, templateVmid, hostname, cpus, ra
     nameserver: '8.8.8.8',
     searchdomain: 'localdomain',
   };
+  // Providers like OneProvider require a specific MAC per IP; Leaseweb-style pools
+  // leave macAddress empty and keep the random MAC generated on clone.
+  if (macAddress) ciConfig.net0 = `virtio=${macAddress},bridge=vmbr0,firewall=1`;
   let ciApplied = false;
   for (let attempt = 1; attempt <= 3 && !ciApplied; attempt++) {
     try {
@@ -309,7 +312,12 @@ export async function getKvmVncProxy(node, vmid) {
 
 // ─── LXC Container operations ────────────────────────────────────────────────
 
-export async function createLxcContainer(node, { vmid, templatePath, hostname, cpus, ram, diskSize, password, storage, ipConfig, additionalIpConfigs = [] }) {
+// additionalIpConfigs entries: either a plain 'ip=x.x.x.x/nn' string, or { ipConfig, mac }
+function lxcNetSpec(ethIndex, ipConf, mac) {
+  return `name=eth${ethIndex},bridge=vmbr0,${ipConf}${mac ? `,hwaddr=${mac}` : ''},firewall=1`;
+}
+
+export async function createLxcContainer(node, { vmid, templatePath, hostname, cpus, ram, diskSize, password, storage, ipConfig, macAddress, additionalIpConfigs = [] }) {
   const pveNode = node.proxmox_node || 'pve';
   const st = storage || node.storage || 'local';
   const netIp = ipConfig || 'ip=dhcp';
@@ -323,13 +331,14 @@ export async function createLxcContainer(node, { vmid, templatePath, hostname, c
     swap:        512,
     rootfs:      `${st}:${diskSize || 20}`,
     password,
-    net0:        `name=eth0,bridge=vmbr0,${netIp},firewall=1`,
+    net0:        lxcNetSpec(0, netIp, macAddress),
     start:       0,
     unprivileged: 1,
   };
 
-  additionalIpConfigs.forEach((ipConf, i) => {
-    body[`net${i + 1}`] = `name=eth${i + 1},bridge=vmbr0,${ipConf},firewall=1`;
+  additionalIpConfigs.forEach((entry, i) => {
+    const conf = typeof entry === 'string' ? { ipConfig: entry } : entry;
+    body[`net${i + 1}`] = lxcNetSpec(i + 1, conf.ipConfig, conf.mac);
   });
 
   const task = await req(node, 'POST', `/nodes/${pveNode}/lxc`, body);
@@ -389,7 +398,7 @@ export async function enableContainerFirewall(node, vmid) {
   } catch {}
 }
 
-export async function createRescueContainer(node, { rescueVmid, rescueTemplate, hostname, ipConfig, additionalIpConfigs = [], password, originalDiskPath, storage }) {
+export async function createRescueContainer(node, { rescueVmid, rescueTemplate, hostname, ipConfig, macAddress, additionalIpConfigs = [], password, originalDiskPath, storage }) {
   const pveNode = node.proxmox_node || 'pve';
   const netIp = ipConfig || 'ip=dhcp';
   const st = storage || node.storage || 'local';
@@ -403,7 +412,7 @@ export async function createRescueContainer(node, { rescueVmid, rescueTemplate, 
     swap:        256,
     rootfs:      `${st}:4`,
     password,
-    net0:        `name=eth0,bridge=vmbr0,${netIp},firewall=1`,
+    net0:        lxcNetSpec(0, netIp, macAddress),
     start:       0,
     unprivileged: 1,
   };
@@ -412,8 +421,9 @@ export async function createRescueContainer(node, { rescueVmid, rescueTemplate, 
     body.mp0 = `${originalDiskPath},mp=/mnt/original`;
   }
 
-  additionalIpConfigs.forEach((ipConf, i) => {
-    body[`net${i + 1}`] = `name=eth${i + 1},bridge=vmbr0,${ipConf},firewall=1`;
+  additionalIpConfigs.forEach((entry, i) => {
+    const conf = typeof entry === 'string' ? { ipConfig: entry } : entry;
+    body[`net${i + 1}`] = lxcNetSpec(i + 1, conf.ipConfig, conf.mac);
   });
 
   const task = await req(node, 'POST', `/nodes/${pveNode}/lxc`, body);
@@ -498,21 +508,23 @@ export async function getLxcVncProxy(node, vmid) {
 
 // ─── Network reconfiguration ─────────────────────────────────────────────────
 
-export async function reconfigureKvmNetwork(node, vmid, ipConfig) {
+export async function reconfigureKvmNetwork(node, vmid, ipConfig, macAddress) {
   const pveNode = node.proxmox_node || 'pve';
-  await req(node, 'PUT', `/nodes/${pveNode}/qemu/${vmid}/config`, { ipconfig0: ipConfig });
+  const cfg = { ipconfig0: ipConfig };
+  if (macAddress) cfg.net0 = `virtio=${macAddress},bridge=vmbr0,firewall=1`;
+  await req(node, 'PUT', `/nodes/${pveNode}/qemu/${vmid}/config`, cfg);
   // Regenerate cloud-init image with new config
   await req(node, 'POST', `/nodes/${pveNode}/qemu/${vmid}/cloudinit`).catch(() => {});
   const task = await req(node, 'POST', `/nodes/${pveNode}/qemu/${vmid}/status/reboot`);
   await waitForTask(node, task);
 }
 
-export async function reconfigureLxcNetwork(node, vmid, ipConfig) {
+export async function reconfigureLxcNetwork(node, vmid, ipConfig, macAddress) {
   const pveNode = node.proxmox_node || 'pve';
   await req(node, 'POST', `/nodes/${pveNode}/lxc/${vmid}/status/stop`).catch(() => {});
   await new Promise(r => setTimeout(r, 3000));
   await req(node, 'PUT', `/nodes/${pveNode}/lxc/${vmid}/config`, {
-    net0: `name=eth0,bridge=vmbr0,${ipConfig},firewall=1`,
+    net0: lxcNetSpec(0, ipConfig, macAddress),
   });
   const task = await req(node, 'POST', `/nodes/${pveNode}/lxc/${vmid}/status/start`);
   await waitForTask(node, task);
@@ -562,13 +574,13 @@ export async function restoreBackup(node, vmid, backupFile, type, storage) {
 
 // ─── Reinstall (restore to template) ─────────────────────────────────────────
 
-export async function reinstallVm(node, vmid, type, templateRef, hostname, password, cpus, ram, diskSize, ipConfig, additionalIpConfigs) {
+export async function reinstallVm(node, vmid, type, templateRef, hostname, password, cpus, ram, diskSize, ipConfig, additionalIpConfigs, macAddress) {
   if (type === 'kvm') {
     await deleteKvmVm(node, vmid);
-    await createKvmVm(node, { vmid, templateVmid: templateRef, hostname, cpus, ram, diskSize, ipConfig, password });
+    await createKvmVm(node, { vmid, templateVmid: templateRef, hostname, cpus, ram, diskSize, ipConfig, password, macAddress });
   } else {
     await deleteLxcContainer(node, vmid);
-    await createLxcContainer(node, { vmid, templatePath: templateRef, hostname, cpus, ram, diskSize, password, storage: node.storage, ipConfig, additionalIpConfigs: additionalIpConfigs || [] });
+    await createLxcContainer(node, { vmid, templatePath: templateRef, hostname, cpus, ram, diskSize, password, storage: node.storage, ipConfig, macAddress, additionalIpConfigs: additionalIpConfigs || [] });
     if (ipConfig && ipConfig !== 'ip=dhcp') {
       const ip = ipConfig.split('/')[0].replace('ip=', '');
       await updateLxcConfig(node, vmid, { hostname: ip });

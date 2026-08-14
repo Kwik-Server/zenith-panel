@@ -1,6 +1,13 @@
 import { query, queryOne } from '../../config/database.js';
 import { adminOnly } from '../../middleware/authenticate.js';
 
+// Accepts aa:bb:cc:dd:ee:ff or aa-bb-cc-dd-ee-ff, returns lowercase colon form (or null)
+function normalizeMac(raw) {
+  if (!raw) return null;
+  const mac = String(raw).trim().toLowerCase().replace(/-/g, ':');
+  return /^([0-9a-f]{2}:){5}[0-9a-f]{2}$/.test(mac) ? mac : null;
+}
+
 export default async function ipPoolRoutes(fastify) {
   fastify.addHook('preHandler', adminOnly);
 
@@ -67,16 +74,34 @@ export default async function ipPoolRoutes(fastify) {
     if (!pool) return reply.status(404).send({ success: false, error: 'Pool not found' });
     let added = 0;
     let skipped = 0;
-    for (const ip of ip_addresses) {
-      const exists = await queryOne('SELECT id FROM ip_addresses WHERE ip_address = ?', [ip.trim()]);
+    for (const entry of ip_addresses) {
+      // Each entry is "IP" or "IP,MAC" / "IP MAC" — MAC needed for providers like
+      // OneProvider that bind IPs to portal-generated MACs (Leaseweb: leave empty)
+      const [ipRaw, macRaw] = String(entry).trim().split(/[,;\s]+/);
+      const ip = (ipRaw || '').trim();
+      if (!ip) { skipped++; continue; }
+      const mac = normalizeMac(macRaw);
+      if (macRaw && !mac) { skipped++; continue; } // malformed MAC — don't silently drop it
+      const exists = await queryOne('SELECT id FROM ip_addresses WHERE ip_address = ?', [ip]);
       if (exists) { skipped++; continue; }
       try {
-        await query('INSERT INTO ip_addresses (ip_address, pool_id) VALUES (?, ?)', [ip.trim(), req.params.id]);
+        await query('INSERT INTO ip_addresses (ip_address, mac_address, pool_id) VALUES (?, ?, ?)', [ip, mac, req.params.id]);
         added++;
       } catch { skipped++; }
     }
-    const msg = skipped > 0 ? `${added} IPs added, ${skipped} skipped (already exist in another pool)` : `${added} IPs added`;
+    const msg = skipped > 0 ? `${added} IPs added, ${skipped} skipped (already exist or invalid format)` : `${added} IPs added`;
     return reply.send({ success: true, message: msg });
+  });
+
+  // Set or clear the MAC address of a single IP (empty string clears it)
+  fastify.put('/:id/ips/:ipId', async (req, reply) => {
+    const { mac_address } = req.body || {};
+    const ip = await queryOne('SELECT * FROM ip_addresses WHERE id = ? AND pool_id = ?', [req.params.ipId, req.params.id]);
+    if (!ip) return reply.status(404).send({ success: false, error: 'IP not found' });
+    const mac = mac_address ? normalizeMac(mac_address) : null;
+    if (mac_address && !mac) return reply.status(400).send({ success: false, error: 'Invalid MAC address (expected aa:bb:cc:dd:ee:ff)' });
+    await query('UPDATE ip_addresses SET mac_address = ? WHERE id = ?', [mac, req.params.ipId]);
+    return reply.send({ success: true, data: { mac_address: mac } });
   });
 
   fastify.delete('/:id/ips/:ipId', async (req, reply) => {

@@ -108,6 +108,7 @@ export const adminAPI = {
   deletePool:      (id)       => api.delete(`/admin/ippools/${id}`),
   addIps:          (id, d)    => api.post(`/admin/ippools/${id}/ips`, d),
   removeIp:        (pid, iid) => api.delete(`/admin/ippools/${pid}/ips/${iid}`),
+  updateIpMac:     (pid, iid, mac) => api.put(`/admin/ippools/${pid}/ips/${iid}`, { mac_address: mac }),
 
   // Tasks & Logs
   getTasks:    (params) => api.get('/admin/tasks', { params }),
