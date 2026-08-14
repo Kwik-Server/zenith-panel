@@ -436,24 +436,23 @@ export async function createRescueContainer(node, { rescueVmid, rescueTemplate, 
 // unlike LXC rescue there is no separate container or SSH password.
 export async function enableKvmRescue(node, vmid, isoVolid) {
   const pveNode = node.proxmox_node || 'pve';
-  await req(node, 'POST', `/nodes/${pveNode}/qemu/${vmid}/status/stop`).catch(() => {});
-  await new Promise(r => setTimeout(r, 3000));
-  await req(node, 'PUT', `/nodes/${pveNode}/qemu/${vmid}/config`, {
-    ide2: `${isoVolid},media=cdrom`,
-    boot: 'order=ide2;scsi0',
-  });
+  const stopTask = await req(node, 'POST', `/nodes/${pveNode}/qemu/${vmid}/status/stop`).catch(() => null);
+  if (stopTask) await waitForTask(node, stopTask).catch(() => {});
+  // Attach the ISO first, THEN set boot order in a separate call — if both go in one
+  // request, Proxmox validates the boot order before ide2 exists and reorders it to
+  // put the disk first, so the VM boots the original OS instead of the rescue system.
+  await req(node, 'PUT', `/nodes/${pveNode}/qemu/${vmid}/config`, { ide2: `${isoVolid},media=cdrom` });
+  await req(node, 'PUT', `/nodes/${pveNode}/qemu/${vmid}/config`, { boot: 'order=ide2;scsi0' });
   const task = await req(node, 'POST', `/nodes/${pveNode}/qemu/${vmid}/status/start`);
   await waitForTask(node, task);
 }
 
 export async function disableKvmRescue(node, vmid) {
   const pveNode = node.proxmox_node || 'pve';
-  await req(node, 'POST', `/nodes/${pveNode}/qemu/${vmid}/status/stop`).catch(() => {});
-  await new Promise(r => setTimeout(r, 3000));
-  await req(node, 'PUT', `/nodes/${pveNode}/qemu/${vmid}/config`, {
-    delete: 'ide2',
-    boot:   'order=scsi0',
-  });
+  const stopTask = await req(node, 'POST', `/nodes/${pveNode}/qemu/${vmid}/status/stop`).catch(() => null);
+  if (stopTask) await waitForTask(node, stopTask).catch(() => {});
+  await req(node, 'PUT', `/nodes/${pveNode}/qemu/${vmid}/config`, { boot: 'order=scsi0' });
+  await req(node, 'PUT', `/nodes/${pveNode}/qemu/${vmid}/config`, { delete: 'ide2' });
   const task = await req(node, 'POST', `/nodes/${pveNode}/qemu/${vmid}/status/start`);
   await waitForTask(node, task);
 }
