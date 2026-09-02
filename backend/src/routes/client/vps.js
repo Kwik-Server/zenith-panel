@@ -24,7 +24,7 @@ export default async function clientVpsRoutes(fastify) {
   fastify.get('/', async (req, reply) => {
     const rows = await query(
       `SELECT v.id, v.hostname, v.status, v.type, v.created_at, v.rescue_mode, p.cpu, p.ram, p.disk,
-              (SELECT ip_address FROM ip_addresses WHERE vps_id = v.id LIMIT 1) as ip_address,
+              (SELECT ip_address FROM ip_addresses WHERE vps_id = v.id ORDER BY is_primary DESC, assigned_at, id LIMIT 1) as ip_address,
               n.name as node_name
        FROM vps v JOIN plans p ON v.plan_id = p.id JOIN nodes n ON v.node_id = n.id
        WHERE v.user_id = ? ORDER BY v.created_at DESC`,
@@ -36,7 +36,7 @@ export default async function clientVpsRoutes(fastify) {
   fastify.get('/:id', async (req, reply) => {
     const vps = await getVpsForUser(req.params.id, req.user.id, req.user.role);
     if (!vps) return reply.status(404).send({ success: false, error: 'VPS not found' });
-    const ips = await query('SELECT * FROM ip_addresses WHERE vps_id = ?', [vps.id]);
+    const ips = await query('SELECT * FROM ip_addresses WHERE vps_id = ? ORDER BY is_primary DESC, assigned_at, id', [vps.id]);
     return reply.send({ success: true, data: { ...vps, ip_addresses: ips } });
   });
 

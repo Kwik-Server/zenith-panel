@@ -13,7 +13,7 @@ async function processBackupJob(job) {
   const { vpsId } = job.data;
 
   const vps = await queryOne(
-    'SELECT v.*, n.* FROM vps v JOIN nodes n ON v.node_id = n.id WHERE v.id = ?',
+    'SELECT v.* FROM vps v JOIN nodes n ON v.node_id = n.id WHERE v.id = ?',
     [vpsId]
   );
   if (!vps) throw new Error(`VPS ${vpsId} not found`);

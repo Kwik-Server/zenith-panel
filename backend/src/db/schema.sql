@@ -78,6 +78,7 @@ CREATE TABLE IF NOT EXISTS ip_addresses (
   pool_id     INT UNSIGNED,
   vps_id      INT UNSIGNED,
   is_ipv6     TINYINT(1) NOT NULL DEFAULT 0,
+  is_primary  TINYINT(1) NOT NULL DEFAULT 0 COMMENT 'Primary (eth0) address of the VPS it is assigned to',
   assigned_at DATETIME,
   FOREIGN KEY (pool_id) REFERENCES ip_pools(id) ON DELETE SET NULL,
   FOREIGN KEY (vps_id)  REFERENCES vps(id)      ON DELETE SET NULL

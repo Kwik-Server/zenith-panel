@@ -180,7 +180,7 @@ export async function listStorageTemplates(node, storage) {
 
 // ─── QEMU (KVM) VM operations ────────────────────────────────────────────────
 
-export async function createKvmVm(node, { vmid, templateVmid, hostname, cpus, ram, diskSize, ipConfig, password, macAddress }) {
+export async function createKvmVm(node, { vmid, templateVmid, hostname, cpus, ram, diskSize, ipConfig, password, macAddress, additionalIpConfigs = [] }) {
   const pveNode = node.proxmox_node || 'pve';
   const storage = node.storage || 'local-lvm';
 
@@ -217,6 +217,9 @@ export async function createKvmVm(node, { vmid, templateVmid, hostname, cpus, ra
   // Providers like OneProvider require a specific MAC per IP; Leaseweb-style pools
   // leave macAddress empty and keep the random MAC generated on clone.
   if (macAddress) ciConfig.net0 = `virtio=${macAddress},bridge=vmbr0,firewall=1`;
+  // Extra IPs get their own NIC + cloud-init slot (net1/ipconfig1, net2/ipconfig2, …).
+  // Only net0 carries the gateway — a second default route would break routing.
+  Object.assign(ciConfig, kvmAdditionalNetConfig(additionalIpConfigs));
   let ciApplied = false;
   for (let attempt = 1; attempt <= 3 && !ciApplied; attempt++) {
     try {
@@ -464,6 +467,15 @@ export async function disableKvmRescue(node, vmid) {
   await waitForTask(node, task);
 }
 
+// Rename a guest. KVM keeps the display name in `name`; LXC uses `hostname`, which is
+// both the Proxmox label and the container's own hostname.
+export async function renameGuest(node, vmid, type, name) {
+  const pveNode = node.proxmox_node || 'pve';
+  const endpoint = type === 'lxc' ? 'lxc' : 'qemu';
+  const body = type === 'lxc' ? { hostname: name } : { name };
+  await req(node, 'PUT', `/nodes/${pveNode}/${endpoint}/${vmid}/config`, body);
+}
+
 export async function updateLxcConfig(node, vmid, config) {
   const pveNode = node.proxmox_node || 'pve';
   await req(node, 'PUT', `/nodes/${pveNode}/lxc/${vmid}/config`, config);
@@ -541,10 +553,32 @@ export async function getLxcVncProxy(node, vmid) {
 
 // ─── Network reconfiguration ─────────────────────────────────────────────────
 
-export async function reconfigureKvmNetwork(node, vmid, ipConfig, macAddress) {
+// Build net1/ipconfig1, net2/ipconfig2, … for a KVM VM's additional IPs.
+// additionalIpConfigs: [{ ipConfig: 'ip=1.2.3.4/24', mac: 'AA:BB:…' | null }]
+function kvmAdditionalNetConfig(additionalIpConfigs = []) {
+  const cfg = {};
+  additionalIpConfigs.forEach((extra, i) => {
+    const idx = i + 1;
+    cfg[`net${idx}`] = `virtio${extra.mac ? '=' + extra.mac : ''},bridge=vmbr0,firewall=1`;
+    cfg[`ipconfig${idx}`] = extra.ipConfig;
+  });
+  return cfg;
+}
+
+export async function reconfigureKvmNetwork(node, vmid, ipConfig, macAddress, additionalIpConfigs = []) {
   const pveNode = node.proxmox_node || 'pve';
-  const cfg = { ipconfig0: ipConfig };
+  const cfg = { ipconfig0: ipConfig, ...kvmAdditionalNetConfig(additionalIpConfigs) };
   if (macAddress) cfg.net0 = `virtio=${macAddress},bridge=vmbr0,firewall=1`;
+
+  // Drop NIC/ipconfig slots left over from a previous, longer IP list
+  const current = await req(node, 'GET', `/nodes/${pveNode}/qemu/${vmid}/config`).catch(() => ({}));
+  const stale = Object.keys(current)
+    .filter(k => /^(net|ipconfig)\d+$/.test(k))
+    .filter(k => parseInt(k.replace(/\D+/g, ''), 10) > additionalIpConfigs.length);
+  if (stale.length) {
+    await req(node, 'PUT', `/nodes/${pveNode}/qemu/${vmid}/config`, { delete: stale.join(',') }).catch(() => {});
+  }
+
   await req(node, 'PUT', `/nodes/${pveNode}/qemu/${vmid}/config`, cfg);
   // Regenerate cloud-init image with new config
   await req(node, 'POST', `/nodes/${pveNode}/qemu/${vmid}/cloudinit`).catch(() => {});
@@ -610,7 +644,7 @@ export async function restoreBackup(node, vmid, backupFile, type, storage) {
 export async function reinstallVm(node, vmid, type, templateRef, hostname, password, cpus, ram, diskSize, ipConfig, additionalIpConfigs, macAddress) {
   if (type === 'kvm') {
     await deleteKvmVm(node, vmid);
-    await createKvmVm(node, { vmid, templateVmid: templateRef, hostname, cpus, ram, diskSize, ipConfig, password, macAddress });
+    await createKvmVm(node, { vmid, templateVmid: templateRef, hostname, cpus, ram, diskSize, ipConfig, password, macAddress, additionalIpConfigs: additionalIpConfigs || [] });
   } else {
     await deleteLxcContainer(node, vmid);
     await createLxcContainer(node, { vmid, templatePath: templateRef, hostname, cpus, ram, diskSize, password, storage: node.storage, ipConfig, macAddress, additionalIpConfigs: additionalIpConfigs || [] });

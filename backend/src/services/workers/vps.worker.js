@@ -28,7 +28,10 @@ async function processJob(job) {
 
   await setTaskStatus(taskId, 'running');
 
-  const vps  = await queryOne('SELECT v.*, p.cpu, p.ram, p.disk, p.bandwidth, n.*, v.type as type FROM vps v JOIN plans p ON v.plan_id = p.id JOIN nodes n ON v.node_id = n.id WHERE v.id = ?', [vpsId]);
+  // Only vps + plan columns: `n.*` here used to clobber v.id / v.hostname / v.type with the
+  // node's own columns (that is how VMs ended up named after the node's IP). The node is
+  // loaded separately below.
+  const vps  = await queryOne('SELECT v.*, p.cpu, p.ram, p.disk, p.bandwidth FROM vps v JOIN plans p ON v.plan_id = p.id WHERE v.id = ?', [vpsId]);
   if (!vps) throw new Error(`VPS ${vpsId} not found`);
 
   const node = await getNode(vps.node_id);
@@ -59,6 +62,8 @@ async function processJob(job) {
       // unrelated value (e.g. the node's own IP) as its name.
       const vmName = (vps.hostname && String(vps.hostname).trim()) || job.data.ip || `vps-${vpsId}`;
 
+      const additionalIpConfigs = (job.data.additional_ip_configs || []).map(ip => ({ ipConfig: `ip=${ip.ipAddress}/${ip.cidr}`, mac: ip.mac || null }));
+
       if (type === 'kvm') {
         const tpl = await queryOne('SELECT * FROM templates WHERE id = ?', [vps.template_id]);
         await proxmox.createKvmVm(node, {
@@ -71,10 +76,10 @@ async function processJob(job) {
           ipConfig:     job.data.ipConfig || 'ip=dhcp',
           password:     rootPassword,
           macAddress:   job.data.mac || null,
+          additionalIpConfigs,
         });
       } else {
         const tpl = await queryOne('SELECT * FROM templates WHERE id = ?', [vps.template_id]);
-        const additionalIpConfigs = (job.data.additional_ip_configs || []).map(ip => ({ ipConfig: `ip=${ip.ipAddress}/${ip.cidr}`, mac: ip.mac || null }));
         await proxmox.createLxcContainer(node, {
           vmid,
           templatePath:       tpl.path,
@@ -104,13 +109,13 @@ async function processJob(job) {
 
       // Assign primary IP
       if (job.data.ip_address_id) {
-        await query('UPDATE ip_addresses SET vps_id = ?, assigned_at = NOW() WHERE id = ?',
+        await query('UPDATE ip_addresses SET vps_id = ?, assigned_at = NOW(), is_primary = 1 WHERE id = ?',
           [vpsId, job.data.ip_address_id]);
       }
       // Assign additional IPs
       if (Array.isArray(job.data.additional_ip_configs)) {
         for (const ipConf of job.data.additional_ip_configs) {
-          await query('UPDATE ip_addresses SET vps_id = ?, assigned_at = NOW() WHERE id = ?', [vpsId, ipConf.id]);
+          await query('UPDATE ip_addresses SET vps_id = ?, assigned_at = NOW(), is_primary = 0 WHERE id = ?', [vpsId, ipConf.id]);
         }
       }
 
@@ -154,7 +159,7 @@ async function processJob(job) {
           console.warn(`Proxmox delete warning for VMID ${vmid}:`, err.message);
         }
       }
-      await query('UPDATE ip_addresses SET vps_id = NULL, assigned_at = NULL WHERE vps_id = ?', [vpsId]);
+      await query('UPDATE ip_addresses SET vps_id = NULL, assigned_at = NULL, is_primary = 0 WHERE vps_id = ?', [vpsId]);
       await query('DELETE FROM tasks WHERE vps_id = ?', [vpsId]);
       await query('DELETE FROM vps WHERE id = ?', [vpsId]);
       break;
@@ -220,7 +225,7 @@ async function processJob(job) {
 
       // Rebuild ipConfig from assigned IPs
       const netmaskToCidr = (nm) => nm ? nm.split('.').reduce((acc, o) => acc + (parseInt(o) >>> 0).toString(2).split('').filter(b => b === '1').length, 0) : 24;
-      const ips = await query('SELECT a.*, p.netmask, p.gateway FROM ip_addresses a JOIN ip_pools p ON a.pool_id = p.id WHERE a.vps_id = ? ORDER BY a.assigned_at', [vpsId]);
+      const ips = await query('SELECT a.*, p.netmask, p.gateway FROM ip_addresses a JOIN ip_pools p ON a.pool_id = p.id WHERE a.vps_id = ? ORDER BY a.is_primary DESC, a.assigned_at, a.id', [vpsId]);
       const primaryIp = ips[0] || null;
       const cidr = netmaskToCidr(primaryIp?.netmask);
       const gw = primaryIp?.gateway || '';
@@ -259,7 +264,7 @@ async function processJob(job) {
       await new Promise(r => setTimeout(r, 3000));
 
       // Get IPs
-      const ips = await query('SELECT a.*, p.netmask, p.gateway FROM ip_addresses a JOIN ip_pools p ON a.pool_id = p.id WHERE a.vps_id = ? ORDER BY a.assigned_at', [vpsId]);
+      const ips = await query('SELECT a.*, p.netmask, p.gateway FROM ip_addresses a JOIN ip_pools p ON a.pool_id = p.id WHERE a.vps_id = ? ORDER BY a.is_primary DESC, a.assigned_at, a.id', [vpsId]);
       const netmaskToCidr = (nm) => nm ? nm.split('.').reduce((acc, o) => acc + (parseInt(o) >>> 0).toString(2).split('').filter(b => b === '1').length, 0) : 24;
       const primaryIp = ips[0] || null;
       const cidr = netmaskToCidr(primaryIp?.netmask);

@@ -93,7 +93,8 @@ export default async function whmcsRoutes(fastify) {
     if (!tpl) return reply.status(400).send({ success: false, error: 'Template not found' });
 
     const freeIp = await queryOne(
-      'SELECT a.*, p.netmask, p.gateway FROM ip_addresses a JOIN ip_pools p ON a.pool_id = p.id WHERE a.vps_id IS NULL AND p.node_id = ? LIMIT 1',
+      `SELECT a.*, p.netmask, p.gateway FROM ip_addresses a JOIN ip_pools p ON a.pool_id = p.id
+       WHERE a.vps_id IS NULL AND p.node_id = ? ORDER BY INET_ATON(a.ip_address) LIMIT 1`,
       [targetNodeId]
     );
 
