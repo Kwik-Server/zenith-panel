@@ -55,6 +55,18 @@ export default function VPSCreate() {
     }));
   };
 
+  // The first id in the list is the primary (eth0) address — move the chosen one to the front.
+  const makePrimary = (ipId) => {
+    setForm(f => ({
+      ...f,
+      ip_address_ids: [ipId, ...f.ip_address_ids.filter(id => id !== ipId)]
+    }));
+  };
+
+  // IPs in the order they were picked, primary first
+  const selectedIpsInOrder = () =>
+    form.ip_address_ids.map(id => availableIps.find(i => i.id === id)).filter(Boolean);
+
   const update = (k, v) => setForm(f => ({ ...f, [k]: v }));
 
   const createNewUser = async () => {
@@ -350,21 +362,30 @@ export default function VPSCreate() {
             <div>
               <label className="block text-sm font-medium text-slate-700 mb-2">
                 IP Addresses
-                <span className="ml-2 text-xs text-slate-400 font-normal">First selected = primary. Leave empty to auto-assign.</span>
+                <span className="ml-2 text-xs text-slate-400 font-normal">First selected = primary (eth0). Use “Make primary” to change it. Leave empty to auto-assign the lowest free IP.</span>
               </label>
               {!form.node_id && <p className="text-sm text-slate-400">Select a node first to see available IPs</p>}
               {form.node_id && availableIps.length === 0 && <p className="text-sm text-slate-400">No available IPs in pool for this node</p>}
               {availableIps.length > 0 && (
                 <div className="border border-slate-200 rounded-lg divide-y divide-slate-100 max-h-48 overflow-y-auto">
-                  {availableIps.map((ip, idx) => (
-                    <label key={ip.id} className={`flex items-center gap-3 px-3 py-2 cursor-pointer hover:bg-slate-50 ${form.ip_address_ids.includes(ip.id) ? 'bg-indigo-50' : ''}`}>
-                      <input type="checkbox" checked={form.ip_address_ids.includes(ip.id)} onChange={() => toggleIp(ip.id)} className="rounded" />
-                      <span className="font-mono text-sm text-slate-900">{ip.ip_address}</span>
-                      {form.ip_address_ids[0] === ip.id && <span className="text-xs bg-indigo-100 text-indigo-600 px-2 py-0.5 rounded-full font-medium">primary</span>}
-                      {form.ip_address_ids.indexOf(ip.id) > 0 && <span className="text-xs bg-slate-100 text-slate-500 px-2 py-0.5 rounded-full">additional</span>}
-                      <span className="text-xs text-slate-400 ml-auto">{ip.pool_name}</span>
-                    </label>
-                  ))}
+                  {availableIps.map((ip) => {
+                    const pos = form.ip_address_ids.indexOf(ip.id);
+                    return (
+                      <div key={ip.id} className={`flex items-center gap-3 px-3 py-2 ${pos >= 0 ? 'bg-indigo-50' : ''}`}>
+                        <label className="flex items-center gap-3 cursor-pointer flex-1 min-w-0">
+                          <input type="checkbox" checked={pos >= 0} onChange={() => toggleIp(ip.id)} className="rounded" />
+                          <span className="font-mono text-sm text-slate-900">{ip.ip_address}</span>
+                          {pos === 0 && <span className="text-xs bg-indigo-100 text-indigo-600 px-2 py-0.5 rounded-full font-medium">primary</span>}
+                          {pos > 0 && <span className="text-xs bg-slate-100 text-slate-500 px-2 py-0.5 rounded-full">additional #{pos}</span>}
+                        </label>
+                        {pos > 0 && (
+                          <button type="button" onClick={() => makePrimary(ip.id)}
+                            className="text-xs text-indigo-600 hover:text-indigo-800 hover:underline whitespace-nowrap">Make primary</button>
+                        )}
+                        <span className="text-xs text-slate-400">{ip.pool_name}</span>
+                      </div>
+                    );
+                  })}
                 </div>
               )}
             </div>
@@ -385,9 +406,8 @@ export default function VPSCreate() {
                 ['Hostname', form.hostname],
                 ['Node', nodeAvailability.find(n => n.id == form.node_id)?.name],
                 ['User', (() => { const u = users.find(u => u.id == form.user_id); if (!u) return '—'; const name = [u.first_name, u.last_name].filter(Boolean).join(' '); return name ? `${name} (${u.email})` : u.email; })()],
-                ['IPs', form.ip_address_ids.length > 0
-                  ? availableIps.filter(i => form.ip_address_ids.includes(i.id)).map(i => i.ip_address).join(', ')
-                  : 'Auto-assign'],
+                ['Primary IP', selectedIpsInOrder()[0]?.ip_address || 'Auto-assign (lowest free)'],
+                ['Additional IPs', selectedIpsInOrder().slice(1).map(i => i.ip_address).join(', ') || '—'],
               ].map(([k, v]) => <div key={k} className="flex justify-between"><span className="text-slate-500">{k}</span><span className="font-medium text-slate-900">{v}</span></div>)}
             </div>
             <div className="flex gap-3">

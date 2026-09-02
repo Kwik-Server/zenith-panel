@@ -25,7 +25,7 @@ export default async function ipPoolRoutes(fastify) {
        FROM ip_addresses i
        JOIN ip_pools p ON i.pool_id = p.id
        WHERE i.vps_id IS NULL AND p.node_id = ?
-       ORDER BY p.name, i.ip_address`,
+       ORDER BY p.name, INET_ATON(i.ip_address)`,
       [node_id]
     );
     return reply.send({ success: true, data: ips });

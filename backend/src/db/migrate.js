@@ -22,6 +22,32 @@ const schema = readFileSync(join(__dirname, 'schema.sql'), 'utf8');
 await conn.query(schema);
 console.log('Schema applied');
 
+// Idempotent column upgrades for existing installs (schema.sql only creates tables)
+const columnUpgrades = [
+  ['ip_addresses', 'is_primary', "TINYINT(1) NOT NULL DEFAULT 0 COMMENT 'Primary (eth0) address of the VPS it is assigned to' AFTER is_ipv6"],
+];
+for (const [table, column, definition] of columnUpgrades) {
+  const [[{ found }]] = await conn.query(
+    `SELECT COUNT(*) AS found FROM information_schema.columns
+     WHERE table_schema = DATABASE() AND table_name = ? AND column_name = ?`,
+    [table, column]
+  );
+  if (!found) {
+    await conn.query(`ALTER TABLE \`${table}\` ADD COLUMN \`${column}\` ${definition}`);
+    console.log(`Added column ${table}.${column}`);
+  }
+}
+
+// Backfill: VPS with assigned IPs but no primary flag get their oldest/lowest IP marked primary
+await conn.query(
+  `UPDATE ip_addresses a
+   JOIN (SELECT vps_id, MIN(id) AS id FROM ip_addresses
+         WHERE vps_id IS NOT NULL
+           AND vps_id NOT IN (SELECT vps_id FROM (SELECT vps_id FROM ip_addresses WHERE is_primary = 1) x)
+         GROUP BY vps_id) pick ON pick.id = a.id
+   SET a.is_primary = 1`
+);
+
 // Default settings
 const defaults = {
   panel_name:       'Zenith',

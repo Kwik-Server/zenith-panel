@@ -71,12 +71,30 @@ export default function VPSDetail() {
   const [showReinstall, setShowReinstall] = useState(false);
   const [templates, setTemplates] = useState([]);
   const [reinstallForm, setReinstallForm] = useState({ template_id: '', root_password: '' });
+  const [editingHostname, setEditingHostname] = useState(false);
+  const [hostnameValue, setHostnameValue] = useState('');
+  const [savingHostname, setSavingHostname] = useState(false);
   const [firewall, setFirewall] = useState({ rules: [], options: {} });
   const [showRuleModal, setShowRuleModal] = useState(false);
   const [editingRule, setEditingRule] = useState(null);
   const [ruleForm, setRuleForm] = useState({ type: 'in', action: 'ACCEPT', proto: 'tcp', dport: '', sport: '', source: '', dest: '', comment: '', enable: 1 });
 
   const load = () => adminAPI.getVpsDetail(id).then(r => setVps(r.data.data));
+
+  const startEditHostname = () => { setHostnameValue(vps.hostname || ''); setEditingHostname(true); };
+
+  const saveHostname = async () => {
+    const next = hostnameValue.trim();
+    if (!next || next === vps.hostname) { setEditingHostname(false); return; }
+    setSavingHostname(true);
+    try {
+      const r = await adminAPI.updateAdminVps(id, { hostname: next });
+      toast.success(r.data.message || 'Hostname updated');
+      setEditingHostname(false);
+      load();
+    } catch (e) { toast.error(e.response?.data?.error || 'Failed to update hostname'); }
+    finally { setSavingHostname(false); }
+  };
 
   useEffect(() => { load(); }, [id]);
 
@@ -123,6 +141,14 @@ export default function VPSDetail() {
       await adminAPI.assignVpsIp(id, { ip_address_id: ipId });
       toast.success('IP assigned');
       setShowIpModal(false);
+      loadIps();
+    } catch (e) { toast.error(e.response?.data?.error || 'Failed'); }
+  };
+
+  const setPrimaryIp = async (ipId) => {
+    try {
+      await adminAPI.setPrimaryVpsIp(id, ipId);
+      toast.success('Primary IP updated — click “Reconfig Network” to apply it to the VPS');
       loadIps();
     } catch (e) { toast.error(e.response?.data?.error || 'Failed'); }
   };
@@ -228,7 +254,30 @@ export default function VPSDetail() {
     <div className="p-8">
       <div className="flex items-start justify-between mb-6">
         <div>
-          <h1 className="text-2xl font-bold text-slate-900">{vps.hostname}</h1>
+          {editingHostname ? (
+            <div className="flex items-center gap-2">
+              <input
+                autoFocus
+                value={hostnameValue}
+                onChange={e => setHostnameValue(e.target.value)}
+                onKeyDown={e => { if (e.key === 'Enter') saveHostname(); if (e.key === 'Escape') setEditingHostname(false); }}
+                className="text-2xl font-bold text-slate-900 border-b-2 border-indigo-500 outline-none bg-transparent"
+              />
+              <button onClick={saveHostname} disabled={savingHostname}
+                className="px-3 py-1 bg-indigo-600 text-white rounded-lg text-sm disabled:opacity-40">
+                {savingHostname ? 'Saving…' : 'Save'}
+              </button>
+              <button onClick={() => setEditingHostname(false)} className="px-3 py-1 text-slate-500 text-sm">Cancel</button>
+            </div>
+          ) : (
+            <h1 className="text-2xl font-bold text-slate-900 flex items-center gap-2 group">
+              {vps.hostname}
+              <button onClick={startEditHostname} title="Rename — also renames the guest in Proxmox"
+                className="text-slate-300 group-hover:text-indigo-600 transition-colors">
+                <Pencil size={16}/>
+              </button>
+            </h1>
+          )}
           <div className="flex items-center gap-3 mt-1 text-sm text-slate-500">
             <span className={`px-2.5 py-0.5 rounded-full text-xs font-semibold ${STATUS_COLOR[vps.status] || 'bg-slate-100'}`}>{vps.status}</span>
             <span>VMID: {vps.proxmox_vmid || 'pending'}</span>
@@ -301,11 +350,13 @@ export default function VPSDetail() {
             </div>
             <dl className="space-y-2">
               {assignedIps.length === 0 && <p className="text-sm text-slate-400">No IPs assigned</p>}
-              {assignedIps.map((ip, i) => (
+              {assignedIps.map((ip) => (
                 <div key={ip.id} className="flex items-center justify-between text-sm">
                   <div className="flex items-center gap-2">
                     <span className="text-slate-500">IPv{ip.ip_address.includes(':') ? '6' : '4'}</span>
-                    {i === 0 && <span className="text-xs bg-indigo-100 text-indigo-600 px-1.5 py-0.5 rounded font-medium">primary</span>}
+                    {ip.is_primary ? <span className="text-xs bg-indigo-100 text-indigo-600 px-1.5 py-0.5 rounded font-medium">primary</span> : (
+                      <button onClick={() => setPrimaryIp(ip.id)} className="text-xs text-indigo-600 hover:underline">Make primary</button>
+                    )}
                   </div>
                   <div className="flex items-center gap-2">
                     <span className="font-mono font-medium text-slate-900">{ip.ip_address}</span>

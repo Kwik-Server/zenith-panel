@@ -25,7 +25,7 @@ export default async function vpsRoutes(fastify) {
     const rows = await query(
       `SELECT v.*, u.email as user_email, n.name as node_name, p.name as plan_name,
               t.name as template_name,
-              (SELECT ip_address FROM ip_addresses WHERE vps_id = v.id LIMIT 1) as ip_address
+              (SELECT ip_address FROM ip_addresses WHERE vps_id = v.id ORDER BY is_primary DESC, assigned_at, id LIMIT 1) as ip_address
        FROM vps v
        JOIN users u ON v.user_id = u.id
        JOIN nodes n ON v.node_id = n.id
@@ -57,16 +57,29 @@ export default async function vpsRoutes(fastify) {
     let additionalIps = [];
 
     if (Array.isArray(ip_address_ids) && ip_address_ids.length > 0) {
-      const selectedIps = await query(
+      const wanted = ip_address_ids.map(id => parseInt(id)).filter(id => Number.isInteger(id));
+      const rows = await query(
         `SELECT a.*, p.netmask, p.gateway FROM ip_addresses a JOIN ip_pools p ON a.pool_id = p.id
-         WHERE a.id IN (${ip_address_ids.map(() => '?').join(',')}) AND a.vps_id IS NULL`,
-        ip_address_ids
+         WHERE a.id IN (${wanted.map(() => '?').join(',')}) AND a.vps_id IS NULL AND p.node_id = ?`,
+        [...wanted, node_id]
       );
-      primaryIp = selectedIps[0] || null;
+      // MySQL returns IN(...) rows in its own order — re-sort to the order the caller
+      // picked them, because the first one becomes the primary (eth0) address.
+      const byId = new Map(rows.map(r => [r.id, r]));
+      const missing = wanted.filter(id => !byId.has(id));
+      if (missing.length) {
+        return reply.status(422).send({
+          success: false,
+          error: `Some selected IPs are no longer free or do not belong to this node (ip ids: ${missing.join(', ')})`,
+        });
+      }
+      const selectedIps = wanted.map(id => byId.get(id));
+      primaryIp = selectedIps[0];
       additionalIps = selectedIps.slice(1);
     } else {
       primaryIp = await queryOne(
-        'SELECT a.*, p.netmask, p.gateway FROM ip_addresses a JOIN ip_pools p ON a.pool_id = p.id WHERE a.vps_id IS NULL AND p.node_id = ? LIMIT 1',
+        `SELECT a.*, p.netmask, p.gateway FROM ip_addresses a JOIN ip_pools p ON a.pool_id = p.id
+         WHERE a.vps_id IS NULL AND p.node_id = ? ORDER BY INET_ATON(a.ip_address) LIMIT 1`,
         [node_id]
       );
       if (!primaryIp) {
@@ -112,12 +125,12 @@ export default async function vpsRoutes(fastify) {
   });
 
   fastify.post('/:id/reconfigure-network', async (req, reply) => {
-    const vps = await queryOne('SELECT v.*, n.* FROM vps v JOIN nodes n ON v.node_id = n.id WHERE v.id = ?', [req.params.id]);
+    const vps = await queryOne('SELECT v.* FROM vps v JOIN nodes n ON v.node_id = n.id WHERE v.id = ?', [req.params.id]);
     if (!vps) return reply.status(404).send({ success: false, error: 'VPS not found' });
     if (!vps.proxmox_vmid) return reply.status(422).send({ success: false, error: 'VPS not provisioned on Proxmox' });
 
     const ips = await query(
-      'SELECT a.*, p.netmask, p.gateway FROM ip_addresses a JOIN ip_pools p ON a.pool_id = p.id WHERE a.vps_id = ? ORDER BY a.assigned_at',
+      'SELECT a.*, p.netmask, p.gateway FROM ip_addresses a JOIN ip_pools p ON a.pool_id = p.id WHERE a.vps_id = ? ORDER BY a.is_primary DESC, a.assigned_at, a.id',
       [req.params.id]
     );
     if (!ips.length) return reply.status(422).send({ success: false, error: 'No IPs assigned to this VPS — assign an IP first' });
@@ -127,11 +140,15 @@ export default async function vpsRoutes(fastify) {
     const cidr = netmaskToCidr(primary.netmask);
     const gw = primary.gateway || '';
     const ipConfig = `ip=${primary.ip_address}/${cidr}${gw ? ',gw=' + gw : ''}`;
+    const additionalIpConfigs = ips.slice(1).map(ip => ({
+      ipConfig: `ip=${ip.ip_address}/${netmaskToCidr(ip.netmask)}`,
+      mac: ip.mac_address || null,
+    }));
 
     const node = await queryOne('SELECT * FROM nodes WHERE id = ?', [vps.node_id]);
     try {
       if (vps.type === 'kvm') {
-        await proxmox.reconfigureKvmNetwork(node, vps.proxmox_vmid, ipConfig, primary.mac_address || null);
+        await proxmox.reconfigureKvmNetwork(node, vps.proxmox_vmid, ipConfig, primary.mac_address || null, additionalIpConfigs);
       } else {
         await proxmox.reconfigureLxcNetwork(node, vps.proxmox_vmid, ipConfig, primary.mac_address || null);
       }
@@ -139,15 +156,15 @@ export default async function vpsRoutes(fastify) {
       return reply.status(422).send({ success: false, error: err.message });
     }
 
-    await logAction(req.user.id, 'vps_network_reconfigured', 'vps', vps.id, { ipConfig }, req.ip);
-    return reply.send({ success: true, message: 'Network reconfigured', data: { ipConfig } });
+    await logAction(req.user.id, 'vps_network_reconfigured', 'vps', vps.id, { ipConfig, additional: additionalIpConfigs.map(a => a.ipConfig) }, req.ip);
+    return reply.send({ success: true, message: 'Network reconfigured', data: { ipConfig, additionalIpConfigs } });
   });
 
   // Force-remove from Zenith DB without touching Proxmox — for VMs already deleted on Proxmox
   fastify.delete('/:id/force', async (req, reply) => {
     const vps = await queryOne('SELECT * FROM vps WHERE id = ?', [req.params.id]);
     if (!vps) return reply.status(404).send({ success: false, error: 'VPS not found' });
-    await query('UPDATE ip_addresses SET vps_id = NULL, assigned_at = NULL WHERE vps_id = ?', [vps.id]);
+    await query('UPDATE ip_addresses SET vps_id = NULL, assigned_at = NULL, is_primary = 0 WHERE vps_id = ?', [vps.id]);
     await query('DELETE FROM tasks WHERE vps_id = ?', [vps.id]);
     await query('DELETE FROM vps WHERE id = ?', [vps.id]);
     await logAction(req.user.id, 'vps_force_deleted', 'vps', vps.id, { hostname: vps.hostname, proxmox_vmid: vps.proxmox_vmid }, req.ip);
@@ -188,7 +205,7 @@ export default async function vpsRoutes(fastify) {
     const vpsId = r.insertId;
 
     if (ip_address_id) {
-      await query('UPDATE ip_addresses SET vps_id = ?, assigned_at = NOW() WHERE id = ? AND vps_id IS NULL', [vpsId, ip_address_id]);
+      await query('UPDATE ip_addresses SET vps_id = ?, assigned_at = NOW(), is_primary = 1 WHERE id = ? AND vps_id IS NULL', [vpsId, ip_address_id]);
     }
 
     await logAction(req.user.id, 'vps_imported', 'vps', vpsId, { hostname, proxmox_vmid }, req.ip);
@@ -209,10 +226,47 @@ export default async function vpsRoutes(fastify) {
     return reply.send({ success: true, data: vps });
   });
 
+  // Proxmox validates guest names as DNS names: dot-separated labels of letters, digits
+  // and hyphens, not starting or ending with a hyphen.
+  const HOSTNAME_RE = /^[a-zA-Z0-9]([a-zA-Z0-9-]*[a-zA-Z0-9])?(\.[a-zA-Z0-9]([a-zA-Z0-9-]*[a-zA-Z0-9])?)*$/;
+
   fastify.put('/:id', async (req, reply) => {
     const { hostname, notes } = req.body || {};
-    await query('UPDATE vps SET hostname=COALESCE(?,hostname), notes=COALESCE(?,notes) WHERE id=?', [hostname, notes, req.params.id]);
-    return reply.send({ success: true });
+    const vps = await queryOne('SELECT * FROM vps WHERE id = ?', [req.params.id]);
+    if (!vps) return reply.status(404).send({ success: false, error: 'VPS not found' });
+
+    const newHostname = (hostname === undefined || hostname === null || String(hostname).trim() === '')
+      ? null
+      : String(hostname).trim();
+    if (newHostname && (newHostname.length > 255 || !HOSTNAME_RE.test(newHostname))) {
+      return reply.status(400).send({
+        success: false,
+        error: 'Invalid hostname — use letters, digits, hyphens and dots (labels cannot start or end with a hyphen)',
+      });
+    }
+
+    // Rename on Proxmox first: if that fails, leave the DB alone rather than let the two drift
+    if (newHostname && newHostname !== vps.hostname && vps.proxmox_vmid) {
+      const node = await queryOne('SELECT * FROM nodes WHERE id = ?', [vps.node_id]);
+      try {
+        await proxmox.renameGuest(node, vps.proxmox_vmid, vps.type, newHostname);
+      } catch (err) {
+        return reply.status(422).send({ success: false, error: `Proxmox rename failed: ${err.message}` });
+      }
+    }
+
+    await query('UPDATE vps SET hostname=COALESCE(?,hostname), notes=COALESCE(?,notes) WHERE id=?',
+      [newHostname, notes ?? null, req.params.id]);
+
+    if (newHostname && newHostname !== vps.hostname) {
+      await logAction(req.user.id, 'vps_hostname_changed', 'vps', vps.id, { from: vps.hostname, to: newHostname }, req.ip);
+    }
+    return reply.send({
+      success: true,
+      message: vps.type === 'lxc' && newHostname && newHostname !== vps.hostname
+        ? 'Hostname updated — restart the container for it to take effect inside the guest'
+        : 'VPS updated',
+    });
   });
 
   fastify.delete('/:id', async (req, reply) => {
@@ -254,7 +308,7 @@ export default async function vpsRoutes(fastify) {
     return new Promise(async (resolve) => {
       try {
         const vps = await queryOne(
-          'SELECT v.*, n.*, v.type as type FROM vps v JOIN nodes n ON v.node_id = n.id WHERE v.id = ?',
+          'SELECT v.* FROM vps v JOIN nodes n ON v.node_id = n.id WHERE v.id = ?',
           [req.params.id]
         );
         if (!vps || !vps.proxmox_vmid) { socket.close(1008, 'VPS not found'); return resolve(); }
@@ -315,9 +369,21 @@ export default async function vpsRoutes(fastify) {
     const ips = await query(
       `SELECT i.*, p.name as pool_name, p.gateway, p.netmask
        FROM ip_addresses i JOIN ip_pools p ON i.pool_id = p.id
-       WHERE i.vps_id = ?`, [req.params.id]
+       WHERE i.vps_id = ?
+       ORDER BY i.is_primary DESC, i.assigned_at, i.id`, [req.params.id]
     );
     return reply.send({ success: true, data: ips });
+  });
+
+  // Change which assigned IP is the primary (eth0) address.
+  // Apply it to the hypervisor afterwards with POST /:id/reconfigure-network.
+  fastify.put('/:id/ips/:ipId/primary', async (req, reply) => {
+    const ip = await queryOne('SELECT * FROM ip_addresses WHERE id = ? AND vps_id = ?', [req.params.ipId, req.params.id]);
+    if (!ip) return reply.status(404).send({ success: false, error: 'IP not found on this VPS' });
+    await query('UPDATE ip_addresses SET is_primary = 0 WHERE vps_id = ?', [req.params.id]);
+    await query('UPDATE ip_addresses SET is_primary = 1 WHERE id = ?', [req.params.ipId]);
+    await logAction(req.user.id, 'vps_primary_ip_changed', 'vps', req.params.id, { ip_address: ip.ip_address }, req.ip);
+    return reply.send({ success: true, message: 'Primary IP updated — run Reconfigure Network to apply it to the VPS' });
   });
 
   fastify.post('/:id/ips', async (req, reply) => {
@@ -325,14 +391,23 @@ export default async function vpsRoutes(fastify) {
     if (!ip_address_id) return reply.status(400).send({ success: false, error: 'ip_address_id required' });
     const ip = await queryOne('SELECT * FROM ip_addresses WHERE id = ? AND vps_id IS NULL', [ip_address_id]);
     if (!ip) return reply.status(404).send({ success: false, error: 'IP not found or already assigned' });
-    await query('UPDATE ip_addresses SET vps_id = ?, assigned_at = NOW() WHERE id = ?', [req.params.id, ip_address_id]);
+    const hasPrimary = await queryOne('SELECT id FROM ip_addresses WHERE vps_id = ? AND is_primary = 1', [req.params.id]);
+    await query('UPDATE ip_addresses SET vps_id = ?, assigned_at = NOW(), is_primary = ? WHERE id = ?', [req.params.id, hasPrimary ? 0 : 1, ip_address_id]);
     return reply.send({ success: true });
   });
 
   fastify.delete('/:id/ips/:ipId', async (req, reply) => {
     const ip = await queryOne('SELECT * FROM ip_addresses WHERE id = ? AND vps_id = ?', [req.params.ipId, req.params.id]);
     if (!ip) return reply.status(404).send({ success: false, error: 'IP not found on this VPS' });
-    await query('UPDATE ip_addresses SET vps_id = NULL, assigned_at = NULL WHERE id = ?', [req.params.ipId]);
+    await query('UPDATE ip_addresses SET vps_id = NULL, assigned_at = NULL, is_primary = 0 WHERE id = ?', [req.params.ipId]);
+    // If the primary was removed, promote the oldest remaining IP so the VPS still has one
+    if (ip.is_primary) {
+      await query(
+        `UPDATE ip_addresses SET is_primary = 1
+         WHERE id = (SELECT id FROM (SELECT id FROM ip_addresses WHERE vps_id = ? ORDER BY assigned_at, id LIMIT 1) x)`,
+        [req.params.id]
+      );
+    }
     return reply.send({ success: true });
   });
 
@@ -380,7 +455,7 @@ export default async function vpsRoutes(fastify) {
 
   // Firewall management
   fastify.get('/:id/firewall', async (req, reply) => {
-    const vps = await queryOne('SELECT v.*, n.* FROM vps v JOIN nodes n ON v.node_id = n.id WHERE v.id = ?', [req.params.id]);
+    const vps = await queryOne('SELECT v.* FROM vps v JOIN nodes n ON v.node_id = n.id WHERE v.id = ?', [req.params.id]);
     if (!vps || !vps.proxmox_vmid) return reply.status(404).send({ success: false, error: 'VPS not found or not provisioned' });
     const node = await queryOne('SELECT * FROM nodes WHERE id = ?', [vps.node_id]);
     try {
@@ -393,7 +468,7 @@ export default async function vpsRoutes(fastify) {
   });
 
   fastify.post('/:id/firewall', async (req, reply) => {
-    const vps = await queryOne('SELECT v.*, n.* FROM vps v JOIN nodes n ON v.node_id = n.id WHERE v.id = ?', [req.params.id]);
+    const vps = await queryOne('SELECT v.* FROM vps v JOIN nodes n ON v.node_id = n.id WHERE v.id = ?', [req.params.id]);
     if (!vps || !vps.proxmox_vmid) return reply.status(404).send({ success: false, error: 'VPS not found or not provisioned' });
     const node = await queryOne('SELECT * FROM nodes WHERE id = ?', [vps.node_id]);
     try {
@@ -404,7 +479,7 @@ export default async function vpsRoutes(fastify) {
   });
 
   fastify.put('/:id/firewall/:pos', async (req, reply) => {
-    const vps = await queryOne('SELECT v.*, n.* FROM vps v JOIN nodes n ON v.node_id = n.id WHERE v.id = ?', [req.params.id]);
+    const vps = await queryOne('SELECT v.* FROM vps v JOIN nodes n ON v.node_id = n.id WHERE v.id = ?', [req.params.id]);
     if (!vps || !vps.proxmox_vmid) return reply.status(404).send({ success: false, error: 'VPS not found or not provisioned' });
     const node = await queryOne('SELECT * FROM nodes WHERE id = ?', [vps.node_id]);
     try {
@@ -414,7 +489,7 @@ export default async function vpsRoutes(fastify) {
   });
 
   fastify.delete('/:id/firewall/:pos', async (req, reply) => {
-    const vps = await queryOne('SELECT v.*, n.* FROM vps v JOIN nodes n ON v.node_id = n.id WHERE v.id = ?', [req.params.id]);
+    const vps = await queryOne('SELECT v.* FROM vps v JOIN nodes n ON v.node_id = n.id WHERE v.id = ?', [req.params.id]);
     if (!vps || !vps.proxmox_vmid) return reply.status(404).send({ success: false, error: 'VPS not found or not provisioned' });
     const node = await queryOne('SELECT * FROM nodes WHERE id = ?', [vps.node_id]);
     try {
@@ -425,7 +500,7 @@ export default async function vpsRoutes(fastify) {
   });
 
   fastify.put('/:id/firewall-options', async (req, reply) => {
-    const vps = await queryOne('SELECT v.*, n.* FROM vps v JOIN nodes n ON v.node_id = n.id WHERE v.id = ?', [req.params.id]);
+    const vps = await queryOne('SELECT v.* FROM vps v JOIN nodes n ON v.node_id = n.id WHERE v.id = ?', [req.params.id]);
     if (!vps || !vps.proxmox_vmid) return reply.status(404).send({ success: false, error: 'VPS not found or not provisioned' });
     const node = await queryOne('SELECT * FROM nodes WHERE id = ?', [vps.node_id]);
     try {
@@ -436,7 +511,7 @@ export default async function vpsRoutes(fastify) {
   });
 
   fastify.get('/:id/console', async (req, reply) => {
-    const vps = await queryOne('SELECT v.*, n.*, v.type as type FROM vps v JOIN nodes n ON v.node_id = n.id WHERE v.id = ?', [req.params.id]);
+    const vps = await queryOne('SELECT v.* FROM vps v JOIN nodes n ON v.node_id = n.id WHERE v.id = ?', [req.params.id]);
     if (!vps) return reply.status(404).send({ success: false, error: 'VPS not found' });
     if (!vps.proxmox_vmid) return reply.status(422).send({ success: false, error: 'VPS not yet provisioned on Proxmox' });
 
@@ -453,7 +528,7 @@ export default async function vpsRoutes(fastify) {
 
   // Live stats from Proxmox
   fastify.get('/:id/stats', async (req, reply) => {
-    const vps = await queryOne('SELECT v.*, n.*, v.type as type FROM vps v JOIN nodes n ON v.node_id = n.id WHERE v.id = ?', [req.params.id]);
+    const vps = await queryOne('SELECT v.* FROM vps v JOIN nodes n ON v.node_id = n.id WHERE v.id = ?', [req.params.id]);
     if (!vps || !vps.proxmox_vmid) return reply.status(422).send({ success: false, error: 'VPS not provisioned' });
     const node = await queryOne('SELECT * FROM nodes WHERE id = ?', [vps.node_id]);
     try {
