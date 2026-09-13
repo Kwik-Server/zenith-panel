@@ -382,7 +382,29 @@ export function startWorkers() {
     if (job?.data?.vpsId) {
       const vpsRow = await query('SELECT rescue_mode FROM vps WHERE id = ?', [job.data.vpsId]).catch(() => []);
       if (!vpsRow[0]?.rescue_mode) {
-        await query('UPDATE vps SET status = ? WHERE id = ?', ['error', job.data.vpsId]).catch(() => {});
+        // Reconcile against the hypervisor rather than assuming the worst. A reinstall
+        // that fails while stopping the guest never touches its disk, so the VPS is
+        // still up and running the customer's old OS — marking it 'error' told them
+        // their server was broken when nothing had happened to it.
+        let resolved = 'error';
+        try {
+          const row = await queryOne(
+            'SELECT v.proxmox_vmid, v.type, v.node_id FROM vps v WHERE v.id = ?', [job.data.vpsId]
+          );
+          if (row?.proxmox_vmid) {
+            const node = await queryOne('SELECT * FROM nodes WHERE id = ?', [row.node_id]);
+            if (node) {
+              const real = await proxmox.probeGuestStatus(node, row.proxmox_vmid, row.type);
+              // 'missing' means the guest really is gone (a delete got far enough), so
+              // 'error' is right. null means the node was unreachable — also 'error'.
+              if (real && real !== 'missing' && real !== 'unknown') resolved = real;
+            }
+          }
+        } catch { /* fall back to 'error' */ }
+        await query('UPDATE vps SET status = ? WHERE id = ?', [resolved, job.data.vpsId]).catch(() => {});
+        if (resolved !== 'error') {
+          console.warn(`VPS ${job.data.vpsId}: job failed but the guest is ${resolved} on Proxmox — status set to ${resolved}, not error`);
+        }
       }
     }
   });

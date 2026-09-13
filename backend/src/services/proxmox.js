@@ -77,6 +77,62 @@ export async function waitForTask(node, upid, timeoutMs = 120000) {
   throw new Error('Proxmox task timed out');
 }
 
+/**
+ * Stop a guest and wait until Proxmox reports it actually stopped.
+ *
+ * Proxmox's stop endpoint is asynchronous: it returns a task UPID and the guest is
+ * still shutting down. The old code slept a flat 2-3s and then issued DELETE, which
+ * fails with "unable to destroy CT N - container is running" whenever stopping takes
+ * longer than that sleep. On a node under IO pressure that is routine, which is why
+ * reinstall (delete + create) became the most-failed operation on the panel.
+ *
+ * Returns 'missing' when the guest does not exist and 'stopped' once it is down.
+ * Throws if it will not stop, so a caller never issues DELETE against a running guest.
+ */
+async function stopAndWait(node, kind, vmid, timeoutMs = 120000) {
+  const pveNode  = node.proxmox_node || 'pve';
+  const notFound = (e) => /does not exist|404|no such/i.test(e.message);
+
+  const readStatus = async () => {
+    try {
+      const d = await req(node, 'GET', `/nodes/${pveNode}/${kind}/${vmid}/status/current`);
+      return d?.status || 'unknown';
+    } catch (e) {
+      if (notFound(e)) return 'missing';
+      throw e;
+    }
+  };
+
+  let status = await readStatus();
+  if (status === 'missing' || status === 'stopped') return status;
+
+  let upid = null;
+  try {
+    upid = await req(node, 'POST', `/nodes/${pveNode}/${kind}/${vmid}/status/stop`);
+  } catch (e) {
+    if (notFound(e)) return 'missing';
+    // A guest that stopped between the read above and this call reports "not running",
+    // which is fine. Anything else is a real failure and must not fall through to DELETE
+    // — the old code swallowed every stop error with .catch(() => {}).
+    if (!/not running/i.test(e.message)) {
+      throw new Error(`stop of ${kind} ${vmid} was rejected: ${e.message}`);
+    }
+  }
+  // The task may report failure for a guest that is on its way down anyway, so treat
+  // the poll below as the source of truth rather than the task's exit status.
+  if (upid) await waitForTask(node, upid, timeoutMs).catch(() => {});
+
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    status = await readStatus();
+    if (status === 'stopped' || status === 'missing') return status;
+    await new Promise(r => setTimeout(r, 2000));
+  }
+  throw new Error(
+    `${kind} ${vmid} did not stop within ${Math.round(timeoutMs / 1000)}s (last status: ${status}) — refusing to destroy a running guest`
+  );
+}
+
 export async function waitForGuestAgent(node, vmid, timeoutMs = 300000) {
   const pveNode = node.proxmox_node || 'pve';
   const start = Date.now();
@@ -405,8 +461,7 @@ export async function createKvmVm(node, { vmid, templateVmid, hostname, cpus, ra
 
 export async function deleteKvmVm(node, vmid) {
   const pveNode = node.proxmox_node || 'pve';
-  await req(node, 'POST', `/nodes/${pveNode}/qemu/${vmid}/status/stop`).catch(() => {});
-  await new Promise(r => setTimeout(r, 3000));
+  if (await stopAndWait(node, 'qemu', vmid) === 'missing') return;
   let task;
   try {
     task = await req(node, 'DELETE', `/nodes/${pveNode}/qemu/${vmid}`, { purge: 1 });
@@ -653,8 +708,7 @@ export async function updateLxcConfig(node, vmid, config) {
 
 export async function deleteLxcContainer(node, vmid) {
   const pveNode = node.proxmox_node || 'pve';
-  await req(node, 'POST', `/nodes/${pveNode}/lxc/${vmid}/status/stop`).catch(() => {});
-  await new Promise(r => setTimeout(r, 2000));
+  if (await stopAndWait(node, 'lxc', vmid) === 'missing') return;
   let task;
   try {
     task = await req(node, 'DELETE', `/nodes/${pveNode}/lxc/${vmid}`);
@@ -823,6 +877,22 @@ export async function reinstallVm(node, vmid, type, templateRef, hostname, passw
       await updateLxcConfig(node, vmid, { hostname: ip });
     }
     await startLxcContainer(node, vmid);
+  }
+}
+
+/**
+ * Read a guest's real status, for reconciling DB state after a job fails.
+ * Returns 'missing' when the guest is gone, or null when the node cannot be reached.
+ */
+export async function probeGuestStatus(node, vmid, type) {
+  const pveNode = node.proxmox_node || 'pve';
+  const kind = type === 'kvm' ? 'qemu' : 'lxc';
+  try {
+    const d = await req(node, 'GET', `/nodes/${pveNode}/${kind}/${vmid}/status/current`);
+    return mapStatus(d?.status);
+  } catch (e) {
+    if (/does not exist|404|no such/i.test(e.message)) return 'missing';
+    return null;
   }
 }
 
