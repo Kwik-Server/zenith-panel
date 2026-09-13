@@ -35,12 +35,16 @@ Safe to re-run: existing templates are skipped, occupied VMIDs are reported as
 CONFLICT (never overwritten), nodes without AVX2 skip 9007/9008, and the `images`
 content type is auto-enabled on `local` storage. No panel changes needed afterwards.
 
-## Windows Server 2022 template (VMID 9009)
+## Windows templates (VMID 9009 = Server 2022, 9010 = Server 2025, 9011 = Server 2019)
 
-Built fully unattended from the eval ISO — assets in `windows/` (autounattend.xml, setup.ps1, go.cmd).
+Built fully unattended from the eval ISO. The three assets in `windows/` (autounattend.xml,
+setup.ps1, go.cmd) build every Windows version — `autounattend.xml` selects
+`/IMAGE/INDEX` 2 (Standard, Desktop Experience), which is the same index on the 2019, 2022 and
+2025 eval ISOs, so `zenith-unattend.iso` is reused as-is for all of them.
+
 Rebuild procedure (on a node with the ISOs in /var/lib/vz/template/iso — win2022-eval.iso,
-virtio-win.iso, zenith-unattend.iso; regenerate the latter with genisoimage from windows/ + the
-Cloudbase MSI in a zenith/ subdir):
+win2019-eval.iso, virtio-win.iso, zenith-unattend.iso; regenerate the latter with genisoimage
+from windows/ + the Cloudbase MSI in a zenith/ subdir):
 
 ```bash
 qm create 9009 --name tpl-win2022-build --ostype win11 --memory 6144 --cores 4 --cpu host \
@@ -52,6 +56,10 @@ qm start 9009    # installs + configures itself, then powers off (~15 min)
 # after shutdown: detach ISOs + dummy scsi1, move sata0 -> scsi0, net0 -> virtio,
 # set --ciuser Administrator, qm template 9009  (see git history for exact commands)
 ```
+
+For Server 2019 use VMID 9011, `--ostype win10` (Proxmox's id for 2016/2019 — win11 is
+2022/2025) and `--ide2 local:iso/win2019-eval.iso`; everything else is identical. Eval ISO:
+`https://software-download.microsoft.com/download/pr/17763.737.190906-2324.rs5_release_svc_refresh_SERVER_EVAL_x64FRE_en-us_1.iso`
 
 Design notes: install goes to a SATA disk (no storage driver needed in WinPE); a dummy
 virtio-scsi disk activates vioscsi so the OS disk can be flipped to scsi0 afterwards
