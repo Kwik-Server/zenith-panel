@@ -178,6 +178,83 @@ export async function listStorageTemplates(node, storage) {
   return items.filter(i => i.content === 'vztmpl' || i.content === 'images');
 }
 
+// ─── Pre-flight template checks ──────────────────────────────────────────────
+
+/**
+ * Verify that a panel template row actually exists on the target node.
+ *
+ * Templates are per-node artifacts — a KVM template is a VMID that has to have been
+ * shipped to that node, an LXC template is a tarball in that node's own storage — but
+ * the panel's templates table is global. Nothing stopped us offering a template on a
+ * node that never received it; the clone then failed deep inside the worker, after the
+ * VPS row already existed and the customer was looking at "creating".
+ *
+ * Resolves to { ok: true } or { ok: false, code, error }. Throws only when the node API
+ * itself cannot be reached — callers should use templatePreflight() to fold that in.
+ */
+export async function verifyTemplateOnNode(node, tpl) {
+  const pveNode = node.proxmox_node || 'pve';
+  const shipScript = String(tpl.os_family || '').toLowerCase() === 'windows'
+    ? 'ship-windows-templates.sh'
+    : 'ship-templates.sh';
+
+  if (tpl.type === 'kvm') {
+    const ref = String(tpl.proxmox_template_id ?? '').trim();
+    if (!/^\d+$/.test(ref)) {
+      return {
+        ok: false,
+        code: 'template_unconfigured',
+        error: `Template "${tpl.name}" has no Proxmox VMID set — set one on the Templates page.`,
+      };
+    }
+    const vms = await req(node, 'GET', `/nodes/${pveNode}/qemu`);
+    if (!(vms || []).some(v => String(v.vmid) === ref)) {
+      return {
+        ok: false,
+        code: 'template_missing',
+        error: `Template "${tpl.name}" (VMID ${ref}) is not on node "${node.name}". Ship it first — on Slave 62: /root/kvm-templates/${shipScript} ${node.hostname}`,
+      };
+    }
+    return { ok: true };
+  }
+
+  // LXC: the ref is a storage volid, e.g. local:vztmpl/ubuntu-22.04-ssh-enabled.tar.zst
+  const volid = String(tpl.path || tpl.proxmox_template_id || '').trim();
+  if (!volid.includes(':')) {
+    return {
+      ok: false,
+      code: 'template_unconfigured',
+      error: `Template "${tpl.name}" has no storage volid set — set one on the Templates page.`,
+    };
+  }
+  const items = await req(node, 'GET', `/nodes/${pveNode}/storage/${volid.split(':')[0]}/content`);
+  if (!(items || []).some(i => i.volid === volid)) {
+    return {
+      ok: false,
+      code: 'template_missing',
+      error: `Template "${tpl.name}" (${volid}) is not on node "${node.name}". Ship it first — on Slave 62: /root/kvm-templates/${shipScript} ${node.hostname}`,
+    };
+  }
+  return { ok: true };
+}
+
+/**
+ * verifyTemplateOnNode() with node-unreachable folded into the result. A node we cannot
+ * reach cannot provision either, so this is still a hard "no" — just a different code so
+ * callers can answer 503 rather than 422.
+ */
+export async function templatePreflight(node, tpl) {
+  try {
+    return await verifyTemplateOnNode(node, tpl);
+  } catch (e) {
+    return {
+      ok: false,
+      code: 'node_unreachable',
+      error: `Could not reach node "${node.name}" to verify template "${tpl.name}": ${e.message}`,
+    };
+  }
+}
+
 // ─── QEMU (KVM) VM operations ────────────────────────────────────────────────
 
 export async function createKvmVm(node, { vmid, templateVmid, hostname, cpus, ram, diskSize, ipConfig, password, macAddress, additionalIpConfigs = [] }) {

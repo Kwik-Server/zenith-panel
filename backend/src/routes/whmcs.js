@@ -92,6 +92,16 @@ export default async function whmcsRoutes(fastify) {
     const tpl = await queryOne('SELECT * FROM templates WHERE id = ? AND is_active = 1', [template_id]);
     if (!tpl) return reply.status(400).send({ success: false, error: 'Template not found' });
 
+    // Pre-flight: templates are per-node artifacts, so a node picked by pickBestNode()
+    // may not carry this OS. Fail here rather than leaving WHMCS with a broken service.
+    const targetNode = await queryOne('SELECT * FROM nodes WHERE id = ?', [targetNodeId]);
+    if (!targetNode) return reply.status(422).send({ success: false, error: 'Node not found' });
+    const pre = await proxmox.templatePreflight(targetNode, tpl);
+    if (!pre.ok) {
+      return reply.status(pre.code === 'node_unreachable' ? 503 : 422)
+                  .send({ success: false, error: pre.error, code: pre.code });
+    }
+
     const freeIp = await queryOne(
       `SELECT a.*, p.netmask, p.gateway FROM ip_addresses a JOIN ip_pools p ON a.pool_id = p.id
        WHERE a.vps_id IS NULL AND p.node_id = ? ORDER BY INET_ATON(a.ip_address) LIMIT 1`,
@@ -156,6 +166,19 @@ export default async function whmcsRoutes(fastify) {
     if (!vps) return reply.status(404).send({ success: false, error: 'VPS not found' });
     const tplId = template_id || vps.template_id;
     if (!tplId) return reply.status(422).send({ success: false, error: 'No template set — select an OS to reinstall' });
+
+    // Pre-flight: a reinstall wipes the disk before it clones, so a missing template
+    // here would destroy a working VPS and leave nothing to boot.
+    const rTpl  = await queryOne('SELECT * FROM templates WHERE id = ?', [tplId]);
+    if (!rTpl) return reply.status(422).send({ success: false, error: 'Template not found' });
+    const rNode = await queryOne('SELECT * FROM nodes WHERE id = ?', [vps.node_id]);
+    if (!rNode) return reply.status(422).send({ success: false, error: 'Node not found' });
+    const rPre = await proxmox.templatePreflight(rNode, rTpl);
+    if (!rPre.ok) {
+      return reply.status(rPre.code === 'node_unreachable' ? 503 : 422)
+                  .send({ success: false, error: rPre.error, code: rPre.code });
+    }
+
     const task = await query('INSERT INTO tasks (vps_id, type, status) VALUES (?, "reinstall_vps", "pending")', [vps.id]);
     await addVpsJob('reinstall_vps', { vpsId: vps.id, taskId: task.insertId, root_password, template_id: tplId });
     return reply.status(202).send({ success: true, message: 'Reinstall queued' });

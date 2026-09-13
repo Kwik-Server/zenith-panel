@@ -50,6 +50,16 @@ export default async function vpsRoutes(fastify) {
     const tpl = await queryOne('SELECT * FROM templates WHERE id = ? AND is_active = 1', [template_id]);
     if (!tpl) return reply.status(400).send({ success: false, error: 'Template not found or inactive' });
 
+    // Pre-flight: the templates table is global but templates live per-node, so confirm
+    // this one is actually on the target node before we create a VPS row that can only fail.
+    const targetNode = await queryOne('SELECT * FROM nodes WHERE id = ?', [node_id]);
+    if (!targetNode) return reply.status(400).send({ success: false, error: 'Node not found' });
+    const pre = await proxmox.templatePreflight(targetNode, tpl);
+    if (!pre.ok) {
+      return reply.status(pre.code === 'node_unreachable' ? 503 : 422)
+                  .send({ success: false, error: pre.error, code: pre.code });
+    }
+
     const netmaskToCidr = (nm) => nm.split('.').reduce((acc, o) => acc + (parseInt(o) >>> 0).toString(2).split('').filter(b => b === '1').length, 0);
 
     // Use specified IPs or auto-select first available

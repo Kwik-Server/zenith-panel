@@ -72,6 +72,22 @@ export default async function clientVpsRoutes(fastify) {
     if (!vps) return reply.status(404).send({ success: false, error: 'VPS not found' });
     const { root_password, template_id } = req.body || {};
     if (!root_password) return reply.status(400).send({ success: false, error: 'root_password required' });
+
+    // Pre-flight: a reinstall wipes the disk before it clones, so a template missing from
+    // this node would destroy a working VPS and leave nothing to boot. Mirrors the worker's
+    // own fallback — an unspecified template_id means "reinstall the same OS".
+    const effTplId = template_id || vps.template_id;
+    if (!effTplId) return reply.status(422).send({ success: false, error: 'No template set — select an OS to reinstall' });
+    const rTpl  = await queryOne('SELECT * FROM templates WHERE id = ?', [effTplId]);
+    if (!rTpl) return reply.status(422).send({ success: false, error: 'Template not found' });
+    const rNode = await queryOne('SELECT * FROM nodes WHERE id = ?', [vps.node_id]);
+    if (!rNode) return reply.status(422).send({ success: false, error: 'Node not found' });
+    const rPre = await proxmox.templatePreflight(rNode, rTpl);
+    if (!rPre.ok) {
+      return reply.status(rPre.code === 'node_unreachable' ? 503 : 422)
+                  .send({ success: false, error: rPre.error, code: rPre.code });
+    }
+
     const task = await query('INSERT INTO tasks (vps_id, user_id, type, status) VALUES (?, ?, "reinstall_vps", "pending")', [vps.id, req.user.id]);
     await addVpsJob('reinstall_vps', { vpsId: vps.id, taskId: task.insertId, root_password, template_id: template_id || null });
     const tplName = template_id ? (await queryOne('SELECT name FROM templates WHERE id = ?', [template_id]))?.name : vps.template_name;
