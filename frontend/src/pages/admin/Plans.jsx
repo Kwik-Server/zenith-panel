@@ -7,7 +7,7 @@ export default function Plans() {
   const [plans, setPlans] = useState([]);
   const [showModal, setShowModal] = useState(false);
   const [editing, setEditing] = useState(null);
-  const [form, setForm] = useState({ name:'', cpu: 1, ram: 1024, disk: 25, bandwidth: 1000, price: 5, type: 'kvm' });
+  const [form, setForm] = useState({ name:'', cpu: 1, ram: 1024, disk: 25, bandwidth: 1000, price: 5, type: 'kvm', max_iops_read: 0, max_iops_write: 0, max_pids: 0, cpu_units: 0 });
 
   const load = () => adminAPI.getPlans().then(r => setPlans(r.data.data));
   useEffect(() => { load(); }, []);
@@ -28,13 +28,13 @@ export default function Plans() {
     catch (e) { toast.error(e.response?.data?.error || 'In use by existing VPS'); }
   };
 
-  const edit = (p) => { setForm({ name: p.name, cpu: p.cpu, ram: p.ram, disk: p.disk, bandwidth: p.bandwidth, price: p.price, type: p.type }); setEditing(p.id); setShowModal(true); };
+  const edit = (p) => { setForm({ name: p.name, cpu: p.cpu, ram: p.ram, disk: p.disk, bandwidth: p.bandwidth, price: p.price, type: p.type, max_iops_read: p.max_iops_read ?? 0, max_iops_write: p.max_iops_write ?? 0, max_pids: p.max_pids ?? 0, cpu_units: p.cpu_units ?? 0 }); setEditing(p.id); setShowModal(true); };
 
   return (
     <div className="p-8">
       <div className="flex items-center justify-between mb-6">
         <h1 className="text-2xl font-bold text-slate-900">Plans</h1>
-        <button onClick={() => { setShowModal(true); setEditing(null); setForm({ name:'', cpu:1, ram:1024, disk:25, bandwidth:1000, price:5, type:'kvm' }); }}
+        <button onClick={() => { setShowModal(true); setEditing(null); setForm({ name:'', cpu:1, ram:1024, disk:25, bandwidth:1000, price:5, type:'kvm', max_iops_read:0, max_iops_write:0, max_pids:0, cpu_units:0 }); }}
           className="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-lg text-sm font-medium">
           <Plus size={16} /> New Plan
         </button>
@@ -75,6 +75,34 @@ export default function Plans() {
                 <select value={form.type} onChange={e => update('type', e.target.value)} className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500 outline-none">
                   <option value="kvm">KVM</option><option value="lxc">LXC</option>
                 </select>
+              </div>
+
+              <div className="pt-3 mt-1 border-t border-slate-100">
+                <p className="text-sm font-semibold text-slate-900">Resource ceilings</p>
+                <p className="text-xs text-slate-500 mt-0.5 mb-3">
+                  0 = unlimited. Stops one guest saturating a node's disks and starving its neighbours.
+                  {form.type === 'kvm'
+                    ? ' Applied automatically at creation.'
+                    : ' LXC: cpuunits applies automatically; IOPS and task ceilings need scripts/apply-lxc-limits.sh on the node.'}
+                </p>
+                <div className="grid grid-cols-2 gap-3">
+                  {[['Read IOPS','max_iops_read'],['Write IOPS','max_iops_write'],
+                    ...(form.type === 'lxc' ? [['Max tasks (threads)','max_pids']] : []),
+                    ['CPU weight','cpu_units']].map(([l,k]) => (
+                    <div key={k}>
+                      <label className="block text-xs font-medium text-slate-600 mb-1">{l}</label>
+                      <input type="number" min="0" value={form[k]} onChange={e => update(k, Number(e.target.value))}
+                        className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500 outline-none" />
+                    </div>
+                  ))}
+                </div>
+                {form.type === 'lxc' && form.max_pids > 0 && (
+                  <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 mt-3">
+                    Task ceilings count <strong>threads</strong>, not processes. A container running MySQL or
+                    another threaded service can legitimately sit in the thousands — check its real figure with
+                    <code className="mx-1">apply-lxc-limits.sh &lt;vmid&gt; --show</code> before setting this.
+                  </p>
+                )}
               </div>
             </div>
             <div className="flex gap-3 mt-5">

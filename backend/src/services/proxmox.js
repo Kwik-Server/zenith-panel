@@ -178,6 +178,81 @@ export async function listStorageTemplates(node, storage) {
   return items.filter(i => i.content === 'vztmpl' || i.content === 'images');
 }
 
+// ─── Per-plan resource ceilings ──────────────────────────────────────────────
+
+/**
+ * Build the Proxmox disk-throttle suffix for a KVM guest from its plan.
+ *
+ * A guest with no ceiling can pin a whole node's spindles and starve every other
+ * tenant on it — the failure mode is entirely external to the guest, so the guest
+ * has no reason to stop. iops_rd/iops_wr cap the sustained rate; the *_max burst
+ * allowance is set to 2x so ordinary bursty work (a package install, a backup) is
+ * not punished while a sustained hammer is.
+ *
+ * Returns '' when the plan sets no ceiling, so existing plans are unchanged.
+ */
+export function kvmThrottleSuffix(plan) {
+  if (!plan) return '';
+  const rd = parseInt(plan.max_iops_read)  || 0;
+  const wr = parseInt(plan.max_iops_write) || 0;
+  const parts = [];
+  if (rd > 0) parts.push(`iops_rd=${rd}`, `iops_rd_max=${rd * 2}`, 'iops_rd_max_length=30');
+  if (wr > 0) parts.push(`iops_wr=${wr}`, `iops_wr_max=${wr * 2}`, 'iops_wr_max_length=30');
+  return parts.length ? ',' + parts.join(',') : '';
+}
+
+/**
+ * Apply a plan's ceilings to an existing guest.
+ *
+ * KVM throttling goes through the Proxmox API and takes effect without a reboot.
+ * LXC is the gap: the container API exposes only cpulimit/cpuunits — there is no
+ * pids or io option — so a container's task and IOPS ceilings have to be written
+ * to its cgroup on the node itself. scripts/apply-lxc-limits.sh does that; this
+ * function applies what the API *can* reach and reports the rest as unenforced so
+ * callers never assume a limit is live when it is not.
+ */
+export async function applyPlanLimits(node, vmid, type, plan) {
+  const pveNode = node.proxmox_node || 'pve';
+  const applied = [];
+  const unenforced = [];
+  if (!plan) return { applied, unenforced };
+
+  const units = parseInt(plan.cpu_units) || 0;
+  const rd    = parseInt(plan.max_iops_read)  || 0;
+  const wr    = parseInt(plan.max_iops_write) || 0;
+  const pids  = parseInt(plan.max_pids) || 0;
+
+  if (type === 'kvm') {
+    if (rd > 0 || wr > 0) {
+      const cfg = await req(node, 'GET', `/nodes/${pveNode}/qemu/${vmid}/config`);
+      const disk = String(cfg.scsi0 || '');
+      if (disk) {
+        // Strip any throttle keys already on the disk, then re-apply from the plan.
+        const base = disk.split(',').filter(k => !/^(iops|mbps|bps)(_|=)/.test(k)).join(',');
+        await req(node, 'PUT', `/nodes/${pveNode}/qemu/${vmid}/config`, {
+          scsi0: base + kvmThrottleSuffix(plan),
+        });
+        applied.push(`iops_rd=${rd || 'unset'}`, `iops_wr=${wr || 'unset'}`);
+      }
+    }
+    if (units > 0) {
+      await req(node, 'PUT', `/nodes/${pveNode}/qemu/${vmid}/config`, { cpuunits: units });
+      applied.push(`cpuunits=${units}`);
+    }
+    if (pids > 0) unenforced.push('max_pids (KVM guests have their own kernel; pids ceilings apply to LXC only)');
+    return { applied, unenforced };
+  }
+
+  // LXC
+  if (units > 0) {
+    await req(node, 'PUT', `/nodes/${pveNode}/lxc/${vmid}/config`, { cpuunits: units });
+    applied.push(`cpuunits=${units}`);
+  }
+  if (pids > 0) unenforced.push(`max_pids=${pids} (needs scripts/apply-lxc-limits.sh on ${node.hostname})`);
+  if (rd > 0 || wr > 0) unenforced.push(`iops ceilings (needs scripts/apply-lxc-limits.sh on ${node.hostname})`);
+  return { applied, unenforced };
+}
+
 // ─── Pre-flight template checks ──────────────────────────────────────────────
 
 /**
@@ -257,7 +332,7 @@ export async function templatePreflight(node, tpl) {
 
 // ─── QEMU (KVM) VM operations ────────────────────────────────────────────────
 
-export async function createKvmVm(node, { vmid, templateVmid, hostname, cpus, ram, diskSize, ipConfig, password, macAddress, additionalIpConfigs = [] }) {
+export async function createKvmVm(node, { vmid, templateVmid, hostname, cpus, ram, diskSize, ipConfig, password, macAddress, additionalIpConfigs = [], plan = null }) {
   const pveNode = node.proxmox_node || 'pve';
   const storage = node.storage || 'local-lvm';
 
@@ -276,6 +351,18 @@ export async function createKvmVm(node, { vmid, templateVmid, hostname, cpus, ra
       disk: 'scsi0',
       size: `${diskSize}G`,
     });
+  }
+
+  // Per-plan disk throttle, applied to the cloned disk before first boot so the
+  // guest can never exceed its tier's IOPS even during its own provisioning.
+  const throttle = kvmThrottleSuffix(plan);
+  if (throttle) {
+    const cfg  = await req(node, 'GET', `/nodes/${pveNode}/qemu/${vmid}/config`);
+    const disk = String(cfg.scsi0 || '');
+    if (disk) {
+      const base = disk.split(',').filter(k => !/^(iops|mbps|bps)(_|=)/.test(k)).join(',');
+      await req(node, 'PUT', `/nodes/${pveNode}/qemu/${vmid}/config`, { scsi0: base + throttle });
+    }
   }
 
   // Add cloud-init drive and configure (works for both Linux cloud-init and Windows cloudbase-init).
@@ -404,7 +491,7 @@ function lxcNetSpec(ethIndex, ipConf, mac) {
   return `name=eth${ethIndex},bridge=vmbr0,${ipConf}${mac ? `,hwaddr=${mac}` : ''},firewall=1`;
 }
 
-export async function createLxcContainer(node, { vmid, templatePath, hostname, cpus, ram, diskSize, password, storage, ipConfig, macAddress, additionalIpConfigs = [] }) {
+export async function createLxcContainer(node, { vmid, templatePath, hostname, cpus, ram, diskSize, password, storage, ipConfig, macAddress, additionalIpConfigs = [], plan = null }) {
   const pveNode = node.proxmox_node || 'pve';
   const st = storage || node.storage || 'local';
   const netIp = ipConfig || 'ip=dhcp';
@@ -422,6 +509,12 @@ export async function createLxcContainer(node, { vmid, templatePath, hostname, c
     start:       0,
     unprivileged: 1,
   };
+
+  // cpuunits is the only per-plan ceiling the LXC API accepts; pids and IOPS
+  // ceilings live in the container's cgroup and are applied on the node by
+  // scripts/apply-lxc-limits.sh.
+  const lxcUnits = parseInt(plan?.cpu_units) || 0;
+  if (lxcUnits > 0) body.cpuunits = lxcUnits;
 
   additionalIpConfigs.forEach((entry, i) => {
     const conf = typeof entry === 'string' ? { ipConfig: entry } : entry;

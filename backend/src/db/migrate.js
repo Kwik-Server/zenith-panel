@@ -25,6 +25,12 @@ console.log('Schema applied');
 // Idempotent column upgrades for existing installs (schema.sql only creates tables)
 const columnUpgrades = [
   ['ip_addresses', 'is_primary', "TINYINT(1) NOT NULL DEFAULT 0 COMMENT 'Primary (eth0) address of the VPS it is assigned to' AFTER is_ipv6"],
+  // Per-plan resource ceilings. 0 = unlimited everywhere, so existing installs keep
+  // their current behaviour until an admin fills these in.
+  ['plans', 'max_iops_read',  "INT UNSIGNED NOT NULL DEFAULT 0 COMMENT 'Disk read IOPS ceiling, 0=unlimited' AFTER type"],
+  ['plans', 'max_iops_write', "INT UNSIGNED NOT NULL DEFAULT 0 COMMENT 'Disk write IOPS ceiling, 0=unlimited' AFTER max_iops_read"],
+  ['plans', 'max_pids',       "INT UNSIGNED NOT NULL DEFAULT 0 COMMENT 'LXC task (pid+thread) ceiling, 0=unlimited' AFTER max_iops_write"],
+  ['plans', 'cpu_units',      "INT UNSIGNED NOT NULL DEFAULT 0 COMMENT 'CPU scheduler weight under contention, 0=Proxmox default' AFTER max_pids"],
 ];
 for (const [table, column, definition] of columnUpgrades) {
   const [[{ found }]] = await conn.query(

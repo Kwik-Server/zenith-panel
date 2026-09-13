@@ -31,7 +31,7 @@ async function processJob(job) {
   // Only vps + plan columns: `n.*` here used to clobber v.id / v.hostname / v.type with the
   // node's own columns (that is how VMs ended up named after the node's IP). The node is
   // loaded separately below.
-  const vps  = await queryOne('SELECT v.*, p.cpu, p.ram, p.disk, p.bandwidth FROM vps v JOIN plans p ON v.plan_id = p.id WHERE v.id = ?', [vpsId]);
+  const vps  = await queryOne('SELECT v.*, p.cpu, p.ram, p.disk, p.bandwidth, p.max_iops_read, p.max_iops_write, p.max_pids, p.cpu_units FROM vps v JOIN plans p ON v.plan_id = p.id WHERE v.id = ?', [vpsId]);
   if (!vps) throw new Error(`VPS ${vpsId} not found`);
 
   const node = await getNode(vps.node_id);
@@ -64,6 +64,16 @@ async function processJob(job) {
 
       const additionalIpConfigs = (job.data.additional_ip_configs || []).map(ip => ({ ipConfig: `ip=${ip.ipAddress}/${ip.cidr}`, mac: ip.mac || null }));
 
+      // Per-plan ceilings. Carried as its own object rather than spreading the plan
+      // row, because `vps` here is a merged vps+plan row and only these four keys
+      // are limits.
+      const planLimits = {
+        max_iops_read:  vps.max_iops_read,
+        max_iops_write: vps.max_iops_write,
+        max_pids:       vps.max_pids,
+        cpu_units:      vps.cpu_units,
+      };
+
       if (type === 'kvm') {
         const tpl = await queryOne('SELECT * FROM templates WHERE id = ?', [vps.template_id]);
         await proxmox.createKvmVm(node, {
@@ -77,6 +87,7 @@ async function processJob(job) {
           password:     rootPassword,
           macAddress:   job.data.mac || null,
           additionalIpConfigs,
+          plan:         planLimits,
         });
       } else {
         const tpl = await queryOne('SELECT * FROM templates WHERE id = ?', [vps.template_id]);
@@ -92,6 +103,7 @@ async function processJob(job) {
           ipConfig:           job.data.ipConfig,
           macAddress:         job.data.mac || null,
           additionalIpConfigs,
+          plan:               planLimits,
         });
       }
 
@@ -103,6 +115,18 @@ async function processJob(job) {
         await proxmox.startLxcContainer(node, vmid);
         await new Promise(r => setTimeout(r, 2000));
         await proxmox.enableContainerFirewall(node, vmid);
+      }
+
+      // Report ceilings the Proxmox API cannot reach (LXC pids/IOPS live in the
+      // container cgroup) so an operator knows to run scripts/apply-lxc-limits.sh
+      // rather than assuming the plan's limits are live.
+      try {
+        const { unenforced } = await proxmox.applyPlanLimits(node, vmid, type, planLimits);
+        if (unenforced.length) {
+          console.warn(`VPS ${vpsId} (vmid ${vmid}) plan ceilings not enforced by the API: ${unenforced.join('; ')}`);
+        }
+      } catch (e) {
+        console.warn(`VPS ${vpsId}: applying plan ceilings failed: ${e.message}`);
       }
 
       await setVpsStatus(vpsId, 'running');
@@ -233,6 +257,19 @@ async function processJob(job) {
       const additionalIpConfigs = ips.slice(1).map(ip => ({ ipConfig: `ip=${ip.ip_address}/${netmaskToCidr(ip.netmask)}`, mac: ip.mac_address || null }));
 
       await proxmox.reinstallVm(node, vmid, type, ref, vps.hostname, job.data.root_password, vps.cpu, vps.ram, vps.disk, ipConfig, additionalIpConfigs, primaryIp?.mac_address || null);
+
+      // A reinstall recreates the disk, which drops any throttle that was on it —
+      // re-apply the plan's ceilings so a reinstall is not a way to shed them.
+      try {
+        await proxmox.applyPlanLimits(node, vmid, type, {
+          max_iops_read:  vps.max_iops_read,
+          max_iops_write: vps.max_iops_write,
+          max_pids:       vps.max_pids,
+          cpu_units:      vps.cpu_units,
+        });
+      } catch (e) {
+        console.warn(`VPS ${vpsId}: re-applying plan ceilings after reinstall failed: ${e.message}`);
+      }
 
       if (job.data.template_id && job.data.template_id != vps.template_id) {
         await query('UPDATE vps SET template_id = ? WHERE id = ?', [job.data.template_id, vpsId]);

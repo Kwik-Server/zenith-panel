@@ -44,6 +44,10 @@ CREATE TABLE IF NOT EXISTS plans (
   bandwidth   INT UNSIGNED NOT NULL  COMMENT 'GB/month, 0=unlimited',
   price       DECIMAL(10,2) NOT NULL DEFAULT 0.00,
   type        ENUM('kvm','lxc') NOT NULL DEFAULT 'kvm',
+  max_iops_read  INT UNSIGNED NOT NULL DEFAULT 0 COMMENT 'Disk read IOPS ceiling, 0=unlimited',
+  max_iops_write INT UNSIGNED NOT NULL DEFAULT 0 COMMENT 'Disk write IOPS ceiling, 0=unlimited',
+  max_pids       INT UNSIGNED NOT NULL DEFAULT 0 COMMENT 'LXC task (pid+thread) ceiling, 0=unlimited',
+  cpu_units      INT UNSIGNED NOT NULL DEFAULT 0 COMMENT 'CPU scheduler weight under contention, 0=Proxmox default',
   is_active   TINYINT(1) NOT NULL DEFAULT 1,
   created_at  DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
