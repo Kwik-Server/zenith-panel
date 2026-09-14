@@ -132,6 +132,34 @@ export default async function whmcsRoutes(fastify) {
     return reply.status(202).send({ success: true, message: 'VPS creation queued', data: { uuid, vps_id: vpsId, hostname, root_password } });
   });
 
+  // Resolve a VPS by its WHMCS service id.
+  //
+  // The module normally finds a VPS by a UUID stored on the WHMCS side (a vps_uuid
+  // custom field, or VPS_UUID:<uuid> in the service notes). VPS created directly in
+  // the panel have neither, so Suspend/Terminate failed with "VPS UUID not found" —
+  // which is every VPS not provisioned through WHMCS. This lets the module ask Zenith
+  // instead, so linking an existing VPS to its service needs only one column set here
+  // and no write access to WHMCS at all.
+  fastify.get('/by-service/:serviceId', async (req, reply) => {
+    const id = parseInt(req.params.serviceId);
+    if (!Number.isInteger(id) || id <= 0) {
+      return reply.status(400).send({ success: false, error: 'serviceId must be a positive integer' });
+    }
+    const rows = await query('SELECT uuid, hostname, status FROM vps WHERE whmcs_service_id = ?', [id]);
+    if (rows.length === 0) {
+      return reply.status(404).send({ success: false, error: `No VPS is linked to WHMCS service ${id}` });
+    }
+    if (rows.length > 1) {
+      // Two VPS claiming one service is a linking mistake. Refuse rather than guess —
+      // picking the wrong one here would suspend or delete the wrong customer's server.
+      return reply.status(409).send({
+        success: false,
+        error: `${rows.length} VPS are linked to WHMCS service ${id} (${rows.map(r => r.hostname).join(', ')}) — fix the duplicate link before billing actions can run`,
+      });
+    }
+    return reply.send({ success: true, data: { uuid: rows[0].uuid, hostname: rows[0].hostname, status: rows[0].status } });
+  });
+
   fastify.post('/:uuid/start', async (req, reply) => {
     const vps = await queryOne('SELECT * FROM vps WHERE uuid = ?', [req.params.uuid]);
     if (!vps) return reply.status(404).send({ success: false, error: 'VPS not found' });

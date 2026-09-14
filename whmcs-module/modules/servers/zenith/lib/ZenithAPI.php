@@ -13,6 +13,10 @@ class ZenithAPI {
         return $this->request('POST', '/whmcs/provision', $data);
     }
 
+    public function lookupByService(int $serviceId): array {
+        return $this->request('GET', "/whmcs/by-service/{$serviceId}");
+    }
+
     public function start(string $uuid): array {
         return $this->request('POST', "/whmcs/{$uuid}/start");
     }

@@ -57,6 +57,21 @@ function _zenith_getuuid(array $params): string {
             return $m[1];
         }
     } catch (\Exception $e) {}
+
+    // Finally, ask Zenith which VPS is linked to this service. A VPS created directly
+    // in the panel has no UUID anywhere in WHMCS, so without this every billing action
+    // on it fails with "VPS UUID not found" — linking such a VPS then only requires
+    // setting whmcs_service_id in Zenith, with nothing written into WHMCS.
+    if (!empty($params['serviceid'])) {
+        try {
+            $res = _zenith_api($params)->lookupByService((int)$params['serviceid']);
+            if (!empty($res['data']['uuid'])) {
+                return $res['data']['uuid'];
+            }
+        } catch (\Exception $e) {
+            logModuleCall('zenith', 'LookupByService', ['serviceid' => $params['serviceid']], $e->getMessage());
+        }
+    }
     return '';
 }
 
