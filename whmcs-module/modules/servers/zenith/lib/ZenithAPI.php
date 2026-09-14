@@ -98,8 +98,11 @@ class ZenithAPI {
             ],
             CURLOPT_CUSTOMREQUEST  => strtoupper($method),
         ]);
-        if (!empty($data) && in_array(strtoupper($method), ['POST', 'PUT', 'DELETE'])) {
-            curl_setopt($ch, CURLOPT_POSTFIELDS, json_encode($data));
+        // Always send a JSON body with POST/PUT/DELETE, even when there is nothing to send:
+        // the Content-Type header above says JSON, and an empty body with that header is
+        // rejected (HTTP 400) by older Zenith releases — which broke suspend/unsuspend.
+        if (in_array(strtoupper($method), ['POST', 'PUT', 'DELETE'])) {
+            curl_setopt($ch, CURLOPT_POSTFIELDS, empty($data) ? '{}' : json_encode($data));
         }
         $body   = curl_exec($ch);
         $status = curl_getinfo($ch, CURLINFO_HTTP_CODE);

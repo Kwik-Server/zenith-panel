@@ -23,6 +23,17 @@ import adminAbuse from './routes/admin/abuse.js';
 export async function buildApp() {
   const app = Fastify({ logger: true, trustProxy: true });
 
+  // The WHMCS module sends `Content-Type: application/json` on every request, including
+  // bodiless POSTs (suspend, unsuspend, start, stop, restart). Fastify rejects those with
+  // FST_ERR_CTP_EMPTY_JSON_BODY (400), which is how WHMCS's automatic suspension failed
+  // for every overdue VPS. Treat an empty JSON body as {}; anything else still goes
+  // through Fastify's own parser, so malformed JSON and prototype poisoning stay rejected.
+  const defaultJsonParser = app.getDefaultJsonParser('error', 'error');
+  app.addContentTypeParser('application/json', { parseAs: 'string' }, (req, body, done) => {
+    if (body.trim() === '') return done(null, {});
+    defaultJsonParser(req, body, done);
+  });
+
   await app.register(cors, { origin: process.env.FRONTEND_URL || '*', credentials: true });
   await app.register(helmet, { contentSecurityPolicy: false });
   await app.register(rateLimit, { max: 200, timeWindow: '1 minute' });
