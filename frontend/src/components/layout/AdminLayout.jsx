@@ -1,7 +1,7 @@
 import React from 'react';
 import { NavLink, Outlet, useNavigate } from 'react-router-dom';
 import { useAuthStore } from '../../store/authStore';
-import { LayoutDashboard, Server, Plus, Cpu, Package, Network, Globe, Users, ListTodo, Settings, LogOut, ChevronRight } from 'lucide-react';
+import { LayoutDashboard, Server, Plus, Cpu, Package, Network, Globe, Users, ListTodo, ShieldAlert, Settings, LogOut, ChevronRight } from 'lucide-react';
 
 const nav = [
   { to: '/admin/dashboard', icon: LayoutDashboard, label: 'Dashboard' },
@@ -12,6 +12,7 @@ const nav = [
   { to: '/admin/ippools',   icon: Globe,           label: 'IP Pools' },
   { to: '/admin/users',     icon: Users,           label: 'Users' },
   { to: '/admin/tasks',     icon: ListTodo,        label: 'Task Queue' },
+  { to: '/admin/abuse',     icon: ShieldAlert,     label: 'Abuse' },
   { to: '/admin/settings',  icon: Settings,        label: 'Settings' },
 ];
 

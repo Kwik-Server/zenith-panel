@@ -18,6 +18,7 @@ import adminSettings from './routes/admin/settings.js';
 import clientVps from './routes/client/vps.js';
 import clientProfile from './routes/client/profile.js';
 import whmcsRoutes from './routes/whmcs.js';
+import adminAbuse from './routes/admin/abuse.js';
 
 export async function buildApp() {
   const app = Fastify({ logger: true, trustProxy: true });
@@ -40,6 +41,7 @@ export async function buildApp() {
   await app.register(adminTasks,      { prefix: '/api/v1/admin/tasks' });
   await app.register(adminLogs,       { prefix: '/api/v1/admin/logs' });
   await app.register(adminSettings,   { prefix: '/api/v1/admin/settings' });
+  await app.register(adminAbuse,      { prefix: '/api/v1/admin/abuse' });
   await app.register(clientVps,       { prefix: '/api/v1/client/vps' });
   await app.register(clientProfile,   { prefix: '/api/v1/client/profile' });
   await app.register(whmcsRoutes,     { prefix: '/api/v1/whmcs' });

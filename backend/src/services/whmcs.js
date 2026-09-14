@@ -6,6 +6,31 @@ async function getWhmcsConfig() {
   return cfg;
 }
 
+// Generic WHMCS API call. Throws when credentials are missing, the request fails, or
+// WHMCS answers anything but result=success. Booleans are sent as 1 or omitted —
+// PHP treats the string "false" as true.
+export async function callWhmcs(action, params = {}) {
+  const { whmcs_url, whmcs_identifier, whmcs_secret } = await getWhmcsConfig();
+  if (!whmcs_url || !whmcs_identifier || !whmcs_secret) {
+    throw new Error('WHMCS API credentials are not configured in Settings');
+  }
+  const body = new URLSearchParams({ identifier: whmcs_identifier, secret: whmcs_secret, action, responsetype: 'json' });
+  for (const [k, v] of Object.entries(params)) {
+    if (v === undefined || v === null || v === false || v === '') continue;
+    body.append(k, v === true ? '1' : String(v));
+  }
+  const { fetch } = await import('undici');
+  const res = await fetch(`${whmcs_url.replace(/\/$/, '')}/includes/api.php`, {
+    method:  'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body:    body.toString(),
+    signal:  AbortSignal.timeout(30000),
+  });
+  const json = await res.json().catch(() => null);
+  if (json?.result !== 'success') throw new Error(`WHMCS ${action} failed: ${json?.message || `HTTP ${res.status}`}`);
+  return json;
+}
+
 // Fire-and-forget: logs an activity line to WHMCS Activity Log.
 // Never throws — VPS operations must not fail because WHMCS is unreachable.
 export async function logWhmcsActivity(description) {

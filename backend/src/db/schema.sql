@@ -157,4 +157,52 @@ CREATE TABLE IF NOT EXISTS settings (
   updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
+-- Abuse handling. One report per provider ticket; one case per affected VPS (or per
+-- unmatched IP). Cases drive the client notification / deadline / suspension flow.
+CREATE TABLE IF NOT EXISTS abuse_reports (
+  id                INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  provider          VARCHAR(100) NOT NULL COMMENT 'leaseweb, or the sender domain for other providers',
+  external_id       VARCHAR(191) NOT NULL COMMENT 'Provider ticket id, e.g. Leaseweb qbvwwm',
+  source            ENUM('api','email','manual') NOT NULL,
+  api_pool_id       INT UNSIGNED NULL COMMENT 'IP pool whose Leaseweb key can see this report',
+  subject           VARCHAR(500),
+  abuse_type        VARCHAR(100),
+  body              MEDIUMTEXT,
+  reported_ips      TEXT COMMENT 'JSON array',
+  provider_status   VARCHAR(30),
+  provider_deadline DATETIME NULL,
+  reported_at       DATETIME NULL,
+  created_at        DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at        DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  UNIQUE KEY uq_provider_report (provider, external_id),
+  FOREIGN KEY (api_pool_id) REFERENCES ip_pools(id) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE IF NOT EXISTS abuse_cases (
+  id                  INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  report_id           INT UNSIGNED NOT NULL,
+  vps_id              INT UNSIGNED NULL,
+  ip_address          VARCHAR(45) NOT NULL DEFAULT '',
+  status              ENUM('pending','notified','review','suspended','resolved','unmatched') NOT NULL DEFAULT 'pending',
+  whmcs_service_id    VARCHAR(50),
+  whmcs_client_id     INT UNSIGNED,
+  whmcs_ticket_id     INT UNSIGNED,
+  whmcs_ticket_tid    VARCHAR(50),
+  whmcs_ticket_status VARCHAR(50),
+  client_last_reply   VARCHAR(30) COMMENT 'WHMCS-local timestamp of the latest client reply',
+  client_deadline     DATETIME NULL,
+  notified_at         DATETIME NULL,
+  suspended_at        DATETIME NULL,
+  suspended_by        ENUM('auto','admin') NULL,
+  resolved_at         DATETIME NULL,
+  resolution_note     TEXT,
+  last_error          TEXT,
+  created_at          DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at          DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  UNIQUE KEY uq_report_ip (report_id, ip_address),
+  INDEX idx_status (status),
+  FOREIGN KEY (report_id) REFERENCES abuse_reports(id) ON DELETE CASCADE,
+  FOREIGN KEY (vps_id)    REFERENCES vps(id)           ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
 SET FOREIGN_KEY_CHECKS = 1;

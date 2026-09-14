@@ -122,6 +122,16 @@ export const adminAPI = {
   getWhmcsKey: ()  => api.get('/admin/settings/whmcs-key'),
   testSmtp:    (d) => api.post('/admin/settings/test-smtp', d),
   testWhmcs:   ()  => api.post('/admin/settings/test-whmcs'),
+
+  // Abuse
+  getAbuseCases:       (params)   => api.get('/admin/abuse', { params }),
+  getAbuseStatus:      ()         => api.get('/admin/abuse/status'),
+  getAbuseCase:        (id)       => api.get(`/admin/abuse/${id}`),
+  pollAbuse:           ()         => api.post('/admin/abuse/poll'),
+  abuseCaseAction:     (id, a, d) => api.post(`/admin/abuse/${id}/${a}`, d || {}),
+  getAbuseResolutions: (id)       => api.get(`/admin/abuse/${id}/resolutions`),
+  createAbuseCase:     (d)        => api.post('/admin/abuse/manual', d),
+  testAbuseImap:       ()         => api.post('/admin/abuse/test-imap'),
 };
 
 // Client

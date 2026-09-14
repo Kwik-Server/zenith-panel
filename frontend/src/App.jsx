@@ -16,6 +16,7 @@ import IPPools from './pages/admin/IPPools';
 import Users from './pages/admin/Users';
 import Tasks from './pages/admin/Tasks';
 import Settings from './pages/admin/Settings';
+import Abuse from './pages/admin/Abuse';
 import ClientDashboard from './pages/client/Dashboard';
 import ClientVPSDetail from './pages/client/VPSDetail';
 import Profile from './pages/client/Profile';
@@ -43,6 +44,7 @@ export default function App() {
         <Route path="ippools" element={<IPPools />} />
         <Route path="users" element={<Users />} />
         <Route path="tasks" element={<Tasks />} />
+        <Route path="abuse" element={<Abuse />} />
         <Route path="settings" element={<Settings />} />
       </Route>
       <Route path="/client" element={<RequireAuth><ClientLayout /></RequireAuth>}>
