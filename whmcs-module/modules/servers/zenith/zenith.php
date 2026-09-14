@@ -42,26 +42,18 @@ function _zenith_api(array $params): ZenithAPI {
 }
 
 function _zenith_getuuid(array $params): string {
-    // Try custom field first
-    if (!empty($params['customfields']['vps_uuid'])) {
-        return $params['customfields']['vps_uuid'];
-    }
-    // Try model notes
-    if (preg_match('/VPS_UUID:([a-f0-9\-]{36})/i', $params['model']->notes ?? '', $m)) {
-        return $m[1];
-    }
-    // Direct DB lookup as last resort
-    try {
-        $notes = Capsule::table('tblhosting')->where('id', $params['serviceid'])->value('notes');
-        if ($notes && preg_match('/VPS_UUID:([a-f0-9\-]{36})/i', $notes, $m)) {
-            return $m[1];
-        }
-    } catch (\Exception $e) {}
-
-    // Finally, ask Zenith which VPS is linked to this service. A VPS created directly
-    // in the panel has no UUID anywhere in WHMCS, so without this every billing action
-    // on it fails with "VPS UUID not found" — linking such a VPS then only requires
-    // setting whmcs_service_id in Zenith, with nothing written into WHMCS.
+    // Ask Zenith first whenever the service id is known.
+    //
+    // The panel is authoritative about which VPS exists right now. A UUID cached on
+    // the WHMCS side goes stale the moment a VPS is rebuilt or replaced, and a stale
+    // value is not empty — so consulting WHMCS first wins, and every billing action
+    // then 404s against a VPS that no longer exists. That is not hypothetical: on this
+    // install services 3448 and 3675 are Active with cached UUIDs whose VPS are gone,
+    // while the panel maps both to live guests. Suspension on them would have failed
+    // silently.
+    //
+    // The cached values below remain the fallback for when Zenith is unreachable or
+    // the service has not been linked.
     if (!empty($params['serviceid'])) {
         try {
             $res = _zenith_api($params)->lookupByService((int)$params['serviceid']);
@@ -72,6 +64,22 @@ function _zenith_getuuid(array $params): string {
             logModuleCall('zenith', 'LookupByService', ['serviceid' => $params['serviceid']], $e->getMessage());
         }
     }
+
+    // Custom field
+    if (!empty($params['customfields']['vps_uuid'])) {
+        return $params['customfields']['vps_uuid'];
+    }
+    // Model notes
+    if (preg_match('/VPS_UUID:([a-f0-9\-]{36})/i', $params['model']->notes ?? '', $m)) {
+        return $m[1];
+    }
+    // Direct DB lookup as last resort
+    try {
+        $notes = Capsule::table('tblhosting')->where('id', $params['serviceid'])->value('notes');
+        if ($notes && preg_match('/VPS_UUID:([a-f0-9\-]{36})/i', $notes, $m)) {
+            return $m[1];
+        }
+    } catch (\Exception $e) {}
     return '';
 }
 
