@@ -59,11 +59,17 @@ function StatusStrip({ status }) {
         <p className="text-xs font-semibold text-slate-500 uppercase mb-1">Leaseweb API ({status.leasewebKeys} key{status.leasewebKeys === 1 ? '' : 's'})</p>
         {!status.apiStatus.length && <p className="text-xs text-slate-500">Not checked yet — press Poll now</p>}
         {status.apiStatus.map(k => (
-          <p key={k.key} className="text-xs" title={k.error || ''}>
-            <span className={k.ok ? 'text-green-700' : 'text-red-600'}>{k.ok ? '●' : '●'}</span>{' '}
+          <div key={k.key} className="text-xs mb-1.5">
+            <span className={k.ok ? 'text-green-700' : 'text-red-600'}>●</span>{' '}
             <span className="text-slate-700">{k.pools.join(', ')}</span>{' '}
             <span className="text-slate-400">{k.ok ? `${k.open} open` : (k.http ? `HTTP ${k.http}` : 'error')}</span>
-          </p>
+            {!k.ok && (
+              <p className="text-red-600 break-words select-all">
+                {[k.errorCode, k.error].filter(Boolean).join(': ')}
+                {k.correlationId && <span className="text-slate-500"> · correlation id {k.correlationId}</span>}
+              </p>
+            )}
+          </div>
         ))}
       </div>
       <div className="bg-white rounded-xl border border-slate-200 p-4">

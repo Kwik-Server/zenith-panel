@@ -312,11 +312,13 @@ async function pollLeaseweb(summary) {
         if (res.created) summary.ingested++;
       }
     } catch (err) {
+      // Report Leaseweb's own answer verbatim. (An earlier version guessed "access not
+      // enabled" for 401/403, but Leaseweb says the Abuse API needs no enablement.)
       entry.ok = false;
       entry.http = err.status || null;
-      entry.error = err.status === 401 || err.status === 403
-        ? 'Abuse API access is not enabled for this key — ask Leaseweb to enable it'
-        : err.message;
+      entry.error = err.message;
+      entry.errorCode = err.errorCode || null;
+      entry.correlationId = err.correlationId || null;
     }
     apiStatus.push(entry);
   }

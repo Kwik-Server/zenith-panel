@@ -1,15 +1,17 @@
-// Leaseweb Abuse API v1 (https://developer.leaseweb.com/api-docs/abuse_v1.html).
-// Access is not on by default — Leaseweb enables it per account on request, so a 401/403
-// here usually means "not enabled for this key" rather than a bad key.
+// Leaseweb Abuse API v1 (https://developer.leaseweb.com/docs/#tag/Abuse-Reports).
+// Errors carry Leaseweb's own errorCode/errorMessage/correlationId; keep them intact —
+// the correlation id is what Leaseweb support needs to trace a failed request.
 import { fetch } from 'undici';
 
 const BASE = 'https://api.leaseweb.com/abuse/v1';
 const PAGE = 50;
 
 export class LeasewebApiError extends Error {
-  constructor(status, message) {
+  constructor(status, message, { errorCode = null, correlationId = null } = {}) {
     super(message);
     this.status = status;
+    this.errorCode = errorCode;
+    this.correlationId = correlationId;
   }
 }
 
@@ -28,7 +30,10 @@ async function lsw(key, method, path, body) {
   let json = null;
   try { json = text ? JSON.parse(text) : null; } catch { /* non-JSON error page */ }
   if (!res.ok) {
-    throw new LeasewebApiError(res.status, json?.errorMessage || json?.message || text.slice(0, 200) || `HTTP ${res.status}`);
+    throw new LeasewebApiError(res.status, json?.errorMessage || json?.message || text.slice(0, 200) || `HTTP ${res.status}`, {
+      errorCode:     json?.errorCode || null,
+      correlationId: json?.correlationId || res.headers.get('x-correlation-id') || null,
+    });
   }
   return json;
 }
