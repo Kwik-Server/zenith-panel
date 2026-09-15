@@ -35,13 +35,15 @@ async function lsw(key, method, path, body) {
 
 const id = (reportId) => encodeURIComponent(reportId);
 
-// Every report that is not CLOSED. Tries the status filter first; if Leaseweb rejects
-// it, pages through the unfiltered list (bounded, so a long history can't stall a cycle).
+// Every report that is not CLOSED. Statuses are OPEN, WAITING and CLOSED, and an
+// unfiltered list defaults to all three, so ask for OPEN,WAITING explicitly — WAITING
+// reports are still unresolved and still have a deadline. If Leaseweb rejects the filter,
+// page through the unfiltered list (bounded, so a long history can't stall a cycle).
 export async function listOpenReports(key) {
   try {
     const out = [];
     for (let offset = 0; offset < 1000; offset += PAGE) {
-      const page = (await lsw(key, 'GET', `/reports?status=OPEN&limit=${PAGE}&offset=${offset}`))?.reports || [];
+      const page = (await lsw(key, 'GET', `/reports?status=OPEN,WAITING&limit=${PAGE}&offset=${offset}`))?.reports || [];
       out.push(...page);
       if (page.length < PAGE) break;
     }

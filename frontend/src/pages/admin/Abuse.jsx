@@ -96,6 +96,7 @@ function CaseDetail({ id, whmcsUrl, onClose, onChanged }) {
   const [confirmSuspend, setConfirmSuspend] = useState(false);
   const [lswMessage, setLswMessage] = useState('');
   const [resolutions, setResolutions] = useState(null);
+  const [messageRequired, setMessageRequired] = useState(false);
   const [picked, setPicked] = useState([]);
 
   const load = useCallback(() => adminAPI.getAbuseCase(id).then(r => setC(r.data.data)).catch(e => toast.error(errMsg(e))), [id]);
@@ -208,7 +209,7 @@ function CaseDetail({ id, whmcsUrl, onClose, onChanged }) {
                     onClick={() => run('lswmsg', () => adminAPI.abuseCaseAction(id, 'provider-message', { body: lswMessage }), 'Sent to Leaseweb').then(() => setLswMessage(''))}>Send</Button>
                 </div>
                 {resolutions === null ? (
-                  <Button size="sm" variant="ghost" onClick={() => adminAPI.getAbuseResolutions(id).then(r => setResolutions(r.data.data?.resolutions || [])).catch(e => toast.error(errMsg(e)))}>
+                  <Button size="sm" variant="ghost" onClick={() => adminAPI.getAbuseResolutions(id).then(r => { setResolutions(r.data.data?.resolutions || []); setMessageRequired(!!r.data.data?.isMessageRequired); }).catch(e => toast.error(errMsg(e)))}>
                     Resolve report at Leaseweb…</Button>
                 ) : (
                   <div className="bg-slate-50 border border-slate-200 rounded-lg p-3 space-y-2">
@@ -218,8 +219,11 @@ function CaseDetail({ id, whmcsUrl, onClose, onChanged }) {
                         {r.description}
                       </label>
                     ))}
-                    <Button size="sm" disabled={!picked.length} loading={busy === 'lswresolve'}
-                      onClick={() => run('lswresolve', () => adminAPI.abuseCaseAction(id, 'provider-resolve', { resolutions: picked, message: lswMessage || undefined }), 'Report resolved at Leaseweb')}>
+                    {messageRequired && (
+                      <p className="text-xs text-amber-700">An IP on this report is null routed, so Leaseweb requires a message: type it in the box above before resolving.</p>
+                    )}
+                    <Button size="sm" disabled={!picked.length || (messageRequired && !lswMessage.trim())} loading={busy === 'lswresolve'}
+                      onClick={() => run('lswresolve', () => adminAPI.abuseCaseAction(id, 'provider-resolve', { resolutions: picked, message: messageRequired ? lswMessage : undefined }), 'Report resolved at Leaseweb')}>
                       Resolve at Leaseweb</Button>
                   </div>
                 )}

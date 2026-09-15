@@ -136,7 +136,12 @@ export default async function abuseRoutes(fastify) {
     const resolutions = [].concat(req.body?.resolutions || []).filter(Boolean);
     if (!resolutions.length) throw new Error('Pick at least one resolution');
     const { c, key } = await withProviderKey(req);
-    const res = await lsw.resolveReport(key, c.external_id, resolutions, req.body?.message);
+    // Leaseweb only accepts a message when one of the report's IPs is null routed, and
+    // then requires it — so follow its own isMessageRequired flag rather than the form.
+    const { isMessageRequired } = await lsw.listResolutions(key, c.external_id);
+    const message = String(req.body?.message || '').trim();
+    if (isMessageRequired && !message) throw new Error('Leaseweb requires a message for this report because an IP is null routed');
+    const res = await lsw.resolveReport(key, c.external_id, resolutions, isMessageRequired ? message : undefined);
     await query("UPDATE abuse_reports SET provider_status = 'CLOSED' WHERE id = ?", [c.report_id]);
     return res;
   });
